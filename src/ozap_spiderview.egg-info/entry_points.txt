@@ -1,0 +1,2 @@
+[console_scripts]
+spiderview = spiderview.main:main

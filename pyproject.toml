@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "ozap-spiderview"
+version = "0.1.0"
+description = "Visual application mapping interface powered by ZAP"
+requires-python = ">=3.10"
+
+dependencies = [
+    "PySide6"
+]
+
+
+[project.scripts]
+spiderview = "spiderview.main:main"
+
+
+[tool.setuptools.packages.find]
+where = ["src"]

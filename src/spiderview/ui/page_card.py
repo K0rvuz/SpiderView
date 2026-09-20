@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 class PageCard(QGraphicsObject):
     """
     Representação visual de um PageNode dentro do canvas.
+
+    A posição do card pode ser persistente (Raw Graph) ou apenas
+    visual (Investigation View). Isso impede layouts temporários de
+    sobrescrever PageNode.x/y.
     """
 
     doubleClicked = Signal(str)
@@ -49,14 +53,25 @@ class PageCard(QGraphicsObject):
 
         self.node = node
 
-        self._edges: list["EdgeItem"] = []
+        self._edges: list[
+            "EdgeItem"
+        ] = []
 
         self._preview = QPixmap()
 
-        if node.preview_path:
-            self.set_preview_path(node.preview_path)
+        # True no Raw Graph.
+        # False em layouts puramente visuais.
+        self._position_persistence_enabled = True
 
-        self.setPos(node.x, node.y)
+        if node.preview_path:
+            self.set_preview_path(
+                node.preview_path
+            )
+
+        self.setPos(
+            node.x,
+            node.y,
+        )
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -64,10 +79,60 @@ class PageCard(QGraphicsObject):
             | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
 
-        self.setAcceptHoverEvents(True)
+        self.setAcceptHoverEvents(
+            True
+        )
 
-        # Cards ficam na frente das arestas.
-        self.setZValue(10)
+        self.setZValue(
+            10
+        )
+
+    # ------------------------------------------------------------------
+    # Position mode
+    # ------------------------------------------------------------------
+
+    def set_position_persistence_enabled(
+        self,
+        enabled: bool,
+    ) -> None:
+        self._position_persistence_enabled = bool(
+            enabled
+        )
+
+    def set_visual_position(
+        self,
+        x: float,
+        y: float,
+    ) -> None:
+        """
+        Move somente a representação Qt.
+
+        PageNode.x/y não são alterados.
+        """
+
+        previous = (
+            self._position_persistence_enabled
+        )
+
+        self._position_persistence_enabled = False
+
+        try:
+            self.setPos(
+                x,
+                y,
+            )
+        finally:
+            self._position_persistence_enabled = (
+                previous
+            )
+
+    def restore_persisted_position(
+        self,
+    ) -> None:
+        self.set_visual_position(
+            self.node.x,
+            self.node.y,
+        )
 
     # ------------------------------------------------------------------
     # Geometry
@@ -98,11 +163,10 @@ class PageCard(QGraphicsObject):
 
         rect = self.boundingRect()
 
-        # --------------------------------------------------------------
-        # Shadow
-        # --------------------------------------------------------------
-
-        shadow_rect = rect.translated(0, 4)
+        shadow_rect = rect.translated(
+            0,
+            4,
+        )
 
         shadow_path = QPainterPath()
         shadow_path.addRoundedRect(
@@ -113,12 +177,13 @@ class PageCard(QGraphicsObject):
 
         painter.fillPath(
             shadow_path,
-            QColor(0, 0, 0, 35),
+            QColor(
+                0,
+                0,
+                0,
+                35,
+            ),
         )
-
-        # --------------------------------------------------------------
-        # Main card
-        # --------------------------------------------------------------
 
         card_path = QPainterPath()
         card_path.addRoundedRect(
@@ -133,10 +198,14 @@ class PageCard(QGraphicsObject):
         )
 
         if self.isSelected():
-            border_color = QColor("#4C9AFF")
+            border_color = QColor(
+                "#4C9AFF"
+            )
             border_width = 2.5
         else:
-            border_color = QColor("#3A4048")
+            border_color = QColor(
+                "#3A4048"
+            )
             border_width = 1.2
 
         painter.setPen(
@@ -146,12 +215,11 @@ class PageCard(QGraphicsObject):
             )
         )
 
-        painter.drawPath(card_path)
+        painter.drawPath(
+            card_path
+        )
 
-        # --------------------------------------------------------------
         # Header
-        # --------------------------------------------------------------
-
         header_rect = QRectF(
             0,
             0,
@@ -160,7 +228,6 @@ class PageCard(QGraphicsObject):
         )
 
         header_path = QPainterPath()
-
         header_path.addRoundedRect(
             header_rect,
             self.BORDER_RADIUS,
@@ -172,34 +239,47 @@ class PageCard(QGraphicsObject):
             QColor("#292E36"),
         )
 
-        # Pequena correção para os cantos inferiores do header.
         painter.fillRect(
             QRectF(
                 0,
-                self.HEADER_HEIGHT - self.BORDER_RADIUS,
+                self.HEADER_HEIGHT
+                - self.BORDER_RADIUS,
                 self.WIDTH,
                 self.BORDER_RADIUS,
             ),
             QColor("#292E36"),
         )
 
-        # --------------------------------------------------------------
         # Title
-        # --------------------------------------------------------------
-
         title_font = QFont()
-        title_font.setPointSize(11)
-        title_font.setWeight(QFont.Weight.DemiBold)
+        title_font.setPointSize(
+            11
+        )
+        title_font.setWeight(
+            QFont.Weight.DemiBold
+        )
 
-        painter.setFont(title_font)
-        painter.setPen(QColor("#F3F4F6"))
+        painter.setFont(
+            title_font
+        )
+        painter.setPen(
+            QColor("#F3F4F6")
+        )
 
-        title_metrics = QFontMetrics(title_font)
+        title_metrics = (
+            QFontMetrics(
+                title_font
+            )
+        )
 
-        title = title_metrics.elidedText(
-            self.node.title,
-            Qt.TextElideMode.ElideRight,
-            int(self.WIDTH - 90),
+        title = (
+            title_metrics.elidedText(
+                self.node.title,
+                Qt.TextElideMode.ElideRight,
+                int(
+                    self.WIDTH - 90
+                ),
+            )
         )
 
         painter.drawText(
@@ -214,10 +294,7 @@ class PageCard(QGraphicsObject):
             title,
         )
 
-        # --------------------------------------------------------------
         # Method badge
-        # --------------------------------------------------------------
-
         method_rect = QRectF(
             self.WIDTH - 68,
             12,
@@ -225,7 +302,9 @@ class PageCard(QGraphicsObject):
             24,
         )
 
-        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setPen(
+            Qt.PenStyle.NoPen
+        )
 
         painter.setBrush(
             QColor("#3B82F6")
@@ -238,11 +317,19 @@ class PageCard(QGraphicsObject):
         )
 
         badge_font = QFont()
-        badge_font.setPointSize(8)
-        badge_font.setWeight(QFont.Weight.Bold)
+        badge_font.setPointSize(
+            8
+        )
+        badge_font.setWeight(
+            QFont.Weight.Bold
+        )
 
-        painter.setFont(badge_font)
-        painter.setPen(QColor("#FFFFFF"))
+        painter.setFont(
+            badge_font
+        )
+        painter.setPen(
+            QColor("#FFFFFF")
+        )
 
         painter.drawText(
             method_rect,
@@ -250,22 +337,29 @@ class PageCard(QGraphicsObject):
             self.node.method.upper(),
         )
 
-        # --------------------------------------------------------------
         # URL
-        # --------------------------------------------------------------
-
         url_font = QFont()
-        url_font.setPointSize(8)
+        url_font.setPointSize(
+            8
+        )
 
-        painter.setFont(url_font)
-        painter.setPen(QColor("#9CA3AF"))
+        painter.setFont(
+            url_font
+        )
+        painter.setPen(
+            QColor("#9CA3AF")
+        )
 
-        url_metrics = QFontMetrics(url_font)
+        url_metrics = QFontMetrics(
+            url_font
+        )
 
         url = url_metrics.elidedText(
             self.node.url,
             Qt.TextElideMode.ElideMiddle,
-            int(self.WIDTH - 32),
+            int(
+                self.WIDTH - 32
+            ),
         )
 
         painter.drawText(
@@ -280,10 +374,7 @@ class PageCard(QGraphicsObject):
             url,
         )
 
-        # --------------------------------------------------------------
         # Preview
-        # --------------------------------------------------------------
-
         preview_rect = QRectF(
             12,
             self.HEADER_HEIGHT + 12,
@@ -297,51 +388,52 @@ class PageCard(QGraphicsObject):
         preview_path = QPainterPath()
         preview_path.addRoundedRect(
             preview_rect,
-            7,
-            7,
+            8,
+            8,
         )
 
         painter.fillPath(
             preview_path,
-            QColor("#15181D"),
+            QColor("#15191E"),
         )
 
         if not self._preview.isNull():
-
-            painter.save()
-
-            painter.setClipPath(preview_path)
-
             scaled = self._preview.scaled(
-                preview_rect.size().toSize(),
+                int(
+                    preview_rect.width()
+                ),
+                int(
+                    preview_rect.height()
+                ),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
 
-            x = (
-                preview_rect.x()
-                + (preview_rect.width() - scaled.width()) / 2
-            )
-
-            y = (
-                preview_rect.y()
-                + (preview_rect.height() - scaled.height()) / 2
+            target = QRectF(
+                preview_rect.center().x()
+                - scaled.width() / 2,
+                preview_rect.center().y()
+                - scaled.height() / 2,
+                scaled.width(),
+                scaled.height(),
             )
 
             painter.drawPixmap(
-                QPointF(x, y),
+                target.toRect(),
                 scaled,
             )
-
-            painter.restore()
-
         else:
+            empty_font = QFont()
+            empty_font.setPointSize(
+                9
+            )
 
-            placeholder_font = QFont()
-            placeholder_font.setPointSize(9)
-
-            painter.setFont(placeholder_font)
-            painter.setPen(QColor("#6B7280"))
+            painter.setFont(
+                empty_font
+            )
+            painter.setPen(
+                QColor("#667085")
+            )
 
             painter.drawText(
                 preview_rect,
@@ -349,11 +441,11 @@ class PageCard(QGraphicsObject):
                 "Preview ainda não disponível",
             )
 
-        # --------------------------------------------------------------
         # Footer
-        # --------------------------------------------------------------
-
-        footer_y = self.HEIGHT - self.FOOTER_HEIGHT
+        footer_y = (
+            self.HEIGHT
+            - self.FOOTER_HEIGHT
+        )
 
         painter.setPen(
             QPen(
@@ -363,19 +455,34 @@ class PageCard(QGraphicsObject):
         )
 
         painter.drawLine(
-            QPointF(12, footer_y),
-            QPointF(self.WIDTH - 12, footer_y),
+            QPointF(
+                12,
+                footer_y,
+            ),
+            QPointF(
+                self.WIDTH - 12,
+                footer_y,
+            ),
         )
 
         footer_font = QFont()
-        footer_font.setPointSize(8)
+        footer_font.setPointSize(
+            8
+        )
 
-        painter.setFont(footer_font)
-        painter.setPen(QColor("#9CA3AF"))
+        painter.setFont(
+            footer_font
+        )
+        painter.setPen(
+            QColor("#9CA3AF")
+        )
 
         status = (
-            str(self.node.status)
-            if self.node.status is not None
+            str(
+                self.node.status
+            )
+            if self.node.status
+            is not None
             else "—"
         )
 
@@ -411,17 +518,21 @@ class PageCard(QGraphicsObject):
         self,
         preview_path: str | None,
     ) -> None:
-
-        self.node.preview_path = preview_path
+        self.node.preview_path = (
+            preview_path
+        )
 
         self._preview = QPixmap()
 
         if preview_path:
-
-            path = Path(preview_path)
+            path = Path(
+                preview_path
+            )
 
             if path.exists():
-                self._preview.load(str(path))
+                self._preview.load(
+                    str(path)
+                )
 
         self.update()
 
@@ -433,21 +544,30 @@ class PageCard(QGraphicsObject):
         self,
         edge: "EdgeItem",
     ) -> None:
-
         if edge not in self._edges:
-            self._edges.append(edge)
+            self._edges.append(
+                edge
+            )
 
     def detach_edge(
         self,
         edge: "EdgeItem",
     ) -> None:
-
         if edge in self._edges:
-            self._edges.remove(edge)
+            self._edges.remove(
+                edge
+            )
 
     @property
-    def edges(self) -> tuple["EdgeItem", ...]:
-        return tuple(self._edges)
+    def edges(
+        self,
+    ) -> tuple[
+        "EdgeItem",
+        ...
+    ]:
+        return tuple(
+            self._edges
+        )
 
     # ------------------------------------------------------------------
     # Events
@@ -457,7 +577,6 @@ class PageCard(QGraphicsObject):
         self,
         event,
     ) -> None:
-
         self.doubleClicked.emit(
             self.node.id
         )
@@ -469,7 +588,6 @@ class PageCard(QGraphicsObject):
         change,
         value,
     ):
-
         result = super().itemChange(
             change,
             value,
@@ -479,13 +597,21 @@ class PageCard(QGraphicsObject):
             change
             == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
         ):
-
             position = self.pos()
 
-            self.node.x = position.x()
-            self.node.y = position.y()
+            if (
+                self._position_persistence_enabled
+            ):
+                self.node.x = (
+                    position.x()
+                )
+                self.node.y = (
+                    position.y()
+                )
 
-            for edge in self._edges:
+            for edge in (
+                self._edges
+            ):
                 edge.update_path()
 
             self.moved.emit(

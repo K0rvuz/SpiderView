@@ -42,6 +42,10 @@ class TransitionType(str, Enum):
     CLICK = "click"
     FORM_SUBMIT = "form_submit"
     REDIRECT = "redirect"
+
+    HISTORY_PUSH = "history_push"
+    HISTORY_REPLACE = "history_replace"
+
     FETCH = "fetch"
     XHR = "xhr"
     REQUEST = "request"

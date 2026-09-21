@@ -1079,8 +1079,23 @@ class SpiderCanvas(QGraphicsView):
         preview = QGraphicsPathItem()
         preview.setZValue(6)
 
+        note_color = QColor(
+            str(
+                (note.node.metadata or {}).get(
+                    "color",
+                    "#D9A441",
+                )
+                or "#D9A441"
+            )
+        )
+
+        if not note_color.isValid():
+            note_color = QColor(
+                "#D9A441"
+            )
+
         pen = QPen(
-            QColor("#D9A441"),
+            note_color,
             2.2,
         )
         pen.setStyle(

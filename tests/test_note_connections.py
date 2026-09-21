@@ -27,7 +27,10 @@ class NoteConnectionTests(unittest.TestCase):
             target_id=page.id,
             type=TransitionType.MANUAL,
             label="note",
-            metadata={"manual_note": True},
+            metadata={
+                "manual_note": True,
+                "note_color": "#4F8AC9",
+            },
         )
 
         with TemporaryDirectory() as temp:
@@ -42,6 +45,10 @@ class NoteConnectionTests(unittest.TestCase):
         self.assertEqual(loaded.target_id, page.id)
         self.assertEqual(loaded.type, TransitionType.MANUAL)
         self.assertTrue(loaded.metadata.get("manual_note"))
+        self.assertEqual(
+            loaded.metadata.get("note_color"),
+            "#4F8AC9",
+        )
 
 
 if __name__ == "__main__":

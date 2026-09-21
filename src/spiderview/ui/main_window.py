@@ -143,6 +143,16 @@ class MainWindow(QMainWindow):
         # GroupCard selecionado expande para seus member_node_ids.
         self._focus_root_ids: set[str] = set()
 
+        # Posições da projeção Analysis/Investigation.
+        #
+        # Diferente de PageNode.x/y, este cache é apenas visual e
+        # existe para impedir que pequenos refreshes reorganizem todo
+        # o grafo. É atualizado a partir do que o usuário está vendo.
+        self._analysis_position_cache: dict[
+            str,
+            tuple[float, float],
+        ] = {}
+
         # --------------------------------------------------------------
         # Canvas
         # --------------------------------------------------------------
@@ -757,7 +767,8 @@ class MainWindow(QMainWindow):
         # Investigation/Focus/Filters usam posições temporárias.
         if self._analysis_view_required():
             self._refresh_analysis_view(
-                fit=True
+                fit=True,
+                preserve_positions=False,
             )
             return
 
@@ -813,7 +824,8 @@ class MainWindow(QMainWindow):
             self._last_raw_layout = "graph"
 
             self._refresh_analysis_view(
-                fit=True
+                fit=True,
+                preserve_positions=False,
             )
             return
 
@@ -997,10 +1009,136 @@ class MainWindow(QMainWindow):
             fit=True
         )
 
+    def _remember_analysis_positions(
+        self,
+    ) -> None:
+        self._analysis_position_cache.update(
+            self.canvas.visible_view_positions()
+        )
+
+    def _resolve_analysis_positions(
+        self,
+        view_graph,
+        fallback_positions: dict[
+            str,
+            tuple[float, float],
+        ],
+        *,
+        preserve_positions: bool,
+    ) -> dict[
+        str,
+        tuple[float, float],
+    ]:
+        positions = dict(
+            fallback_positions
+        )
+
+        if not preserve_positions:
+            self._analysis_position_cache.clear()
+            return positions
+
+        cache = self._analysis_position_cache
+
+        for view_id, view_node in (
+            view_graph.nodes.items()
+        ):
+            cached = cache.get(
+                view_id
+            )
+
+            if cached is not None:
+                positions[
+                    view_id
+                ] = cached
+                continue
+
+            if view_node.is_real:
+                raw_id = (
+                    view_node.raw_node_ids[
+                        0
+                    ]
+                )
+
+                card = self.canvas.get_node(
+                    raw_id
+                )
+
+                if card is None:
+                    continue
+
+                point = card.scenePos()
+
+                positions[
+                    view_id
+                ] = (
+                    float(
+                        point.x()
+                    ),
+                    float(
+                        point.y()
+                    ),
+                )
+
+                continue
+
+            member_positions = [
+                cache[
+                    raw_id
+                ]
+                for raw_id
+                in view_node.raw_node_ids
+                if raw_id in cache
+            ]
+
+            if not member_positions:
+                member_positions = [
+                    (
+                        float(
+                            card.scenePos().x()
+                        ),
+                        float(
+                            card.scenePos().y()
+                        ),
+                    )
+                    for raw_id
+                    in view_node.raw_node_ids
+                    if (
+                        card := self.canvas.get_node(
+                            raw_id
+                        )
+                    )
+                    is not None
+                ]
+
+            if member_positions:
+                positions[
+                    view_id
+                ] = (
+                    sum(
+                        point[0]
+                        for point
+                        in member_positions
+                    )
+                    / len(
+                        member_positions
+                    ),
+                    sum(
+                        point[1]
+                        for point
+                        in member_positions
+                    )
+                    / len(
+                        member_positions
+                    ),
+                )
+
+        return positions
+
     def _refresh_analysis_view(
         self,
         *,
         fit: bool = True,
+        preserve_positions: bool = True,
     ) -> None:
         """
         Pipeline de visualização:
@@ -1020,6 +1158,9 @@ class MainWindow(QMainWindow):
 
         if not self.canvas.nodes:
             return
+
+        if preserve_positions:
+            self._remember_analysis_positions()
 
         raw_graph = (
             self._build_graph_model()
@@ -1114,9 +1255,23 @@ class MainWindow(QMainWindow):
             layout_result
         )
 
+        positions = (
+            self._resolve_analysis_positions(
+                view_graph,
+                layout_result.positions,
+                preserve_positions=(
+                    preserve_positions
+                ),
+            )
+        )
+
         self.canvas.apply_view_graph(
             view_graph,
-            layout_result.positions,
+            positions,
+        )
+
+        self._analysis_position_cache.update(
+            positions
         )
 
         if fit:
@@ -3998,6 +4153,7 @@ class MainWindow(QMainWindow):
         self._view_graph = None
         self._investigation_refresh_pending = False
         self._focus_root_ids.clear()
+        self._analysis_position_cache.clear()
 
         if hasattr(
             self,

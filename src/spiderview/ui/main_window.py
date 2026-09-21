@@ -3383,6 +3383,31 @@ class MainWindow(QMainWindow):
             return
 
         card.update()
+
+        note_color = str(
+            (card.node.metadata or {}).get(
+                "color",
+                "#D9A441",
+            )
+            or "#D9A441"
+        )
+
+        for edge in self.canvas.edges.values():
+            transition = edge.transition
+
+            if (
+                transition.source_id == node_id
+                and transition.metadata.get(
+                    "manual_note"
+                )
+            ):
+                transition.metadata[
+                    "note_color"
+                ] = note_color
+
+                edge.refresh_style()
+
+        self._schedule_investigation_refresh()
         self._on_canvas_selection_changed()
         self.statusBar().showMessage(
             "Nota atualizada.",
@@ -3434,6 +3459,17 @@ class MainWindow(QMainWindow):
                 else "manual_edge"
             ): True,
         }
+
+        if source_is_note:
+            metadata[
+                "note_color"
+            ] = str(
+                (source.node.metadata or {}).get(
+                    "color",
+                    "#D9A441",
+                )
+                or "#D9A441"
+            )
 
         transition = Transition(
             source_id=source_id,

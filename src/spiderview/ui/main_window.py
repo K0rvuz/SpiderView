@@ -4156,6 +4156,45 @@ class MainWindow(QMainWindow):
                 background: #14171C;
             }
 
+            QMenuBar {
+                background: #171B21;
+                color: #D8DEE9;
+                border-bottom: 1px solid #2C323B;
+                padding: 3px 6px;
+            }
+
+            QMenuBar::item {
+                background: transparent;
+                border-radius: 5px;
+                padding: 6px 10px;
+            }
+
+            QMenuBar::item:selected {
+                background: #292F38;
+            }
+
+            QMenu {
+                background: #1B1F26;
+                color: #D8DEE9;
+                border: 1px solid #343B46;
+                padding: 5px;
+            }
+
+            QMenu::item {
+                border-radius: 5px;
+                padding: 7px 28px 7px 10px;
+            }
+
+            QMenu::item:selected {
+                background: #2B3440;
+            }
+
+            QMenu::separator {
+                height: 1px;
+                background: #343A45;
+                margin: 5px 8px;
+            }
+
             QToolBar {
                 background: #1B1F26;
                 border: none;

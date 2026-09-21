@@ -737,6 +737,50 @@ def build_view_graph(
             )
         )
 
+        edge_metadata = {
+            "request_count":
+                request_count,
+
+            "raw_count":
+                count,
+
+            "view_aggregated":
+                True,
+        }
+
+        if (
+            transitions
+            and all(
+                transition.metadata.get(
+                    "manual_note"
+                )
+                for transition
+                in transitions
+            )
+        ):
+            edge_metadata[
+                "manual_note"
+            ] = True
+
+            note_color = next(
+                (
+                    transition.metadata.get(
+                        "note_color"
+                    )
+                    for transition
+                    in transitions
+                    if transition.metadata.get(
+                        "note_color"
+                    )
+                ),
+                None,
+            )
+
+            if note_color:
+                edge_metadata[
+                    "note_color"
+                ] = note_color
+
         edges[
             view_edge_id
         ] = ViewEdge(
@@ -749,16 +793,7 @@ def build_view_graph(
             type=transition_type,
             label=label,
             aggregated=True,
-            metadata={
-                "request_count":
-                    request_count,
-
-                "raw_count":
-                    count,
-
-                "view_aggregated":
-                    True,
-            },
+            metadata=edge_metadata,
         )
 
     # --------------------------------------------------------------

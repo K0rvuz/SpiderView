@@ -143,6 +143,16 @@ class MainWindow(QMainWindow):
         # GroupCard selecionado expande para seus member_node_ids.
         self._focus_root_ids: set[str] = set()
 
+        # Posições da projeção Analysis/Investigation.
+        #
+        # Diferente de PageNode.x/y, este cache é apenas visual e
+        # existe para impedir que pequenos refreshes reorganizem todo
+        # o grafo. É atualizado a partir do que o usuário está vendo.
+        self._analysis_position_cache: dict[
+            str,
+            tuple[float, float],
+        ] = {}
+
         # --------------------------------------------------------------
         # Canvas
         # --------------------------------------------------------------
@@ -227,44 +237,104 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _create_toolbar(self) -> None:
-        toolbar = QToolBar(
-            "SpiderView",
+        """
+        Menus de comandos da aplicação.
+
+        A antiga toolbar principal cresceu junto com o projeto e
+        começou a competir por espaço com o canvas. Os comandos ficam
+        agora organizados por função, preservando todos os atalhos.
+        A toolbar Analysis continua separada por ser uma superfície
+        de consulta/filtros em tempo real.
+        """
+
+        menu_bar = self.menuBar()
+
+        file_menu = menu_bar.addMenu(
+            "Arquivo"
+        )
+
+        edit_menu = menu_bar.addMenu(
+            "Editar"
+        )
+
+        view_menu = menu_bar.addMenu(
+            "Visualização"
+        )
+
+        layout_menu = menu_bar.addMenu(
+            "Layout"
+        )
+
+        tools_menu = menu_bar.addMenu(
+            "Ferramentas"
+        )
+
+        # --------------------------------------------------------------
+        # Arquivo
+        # --------------------------------------------------------------
+
+        open_action = QAction(
+            "Abrir projeto",
             self,
         )
+        open_action.setShortcut(
+            QKeySequence("Ctrl+O")
+        )
+        open_action.triggered.connect(
+            self._open_project
+        )
+        file_menu.addAction(
+            open_action
+        )
 
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-
-        # Browser
-        browser_action = QAction(
-            "Browser",
+        save_action = QAction(
+            "Salvar",
             self,
         )
-        browser_action.setShortcut(
-            QKeySequence("Ctrl+L")
+        save_action.setShortcut(
+            QKeySequence("Ctrl+S")
         )
-        browser_action.triggered.connect(
-            self._show_browser
+        save_action.triggered.connect(
+            self._save_project
         )
-        toolbar.addAction(browser_action)
+        file_menu.addAction(
+            save_action
+        )
 
-        details_action = QAction(
-            "Details",
+        save_as_action = QAction(
+            "Salvar como…",
             self,
         )
-        details_action.setShortcut(
-            QKeySequence("Ctrl+D")
+        save_as_action.setShortcut(
+            QKeySequence("Ctrl+Shift+S")
         )
-        details_action.triggered.connect(
-            self._show_details
+        save_as_action.triggered.connect(
+            self._save_project_as
         )
-        toolbar.addAction(
-            details_action
+        file_menu.addAction(
+            save_as_action
         )
 
-        toolbar.addSeparator()
+        file_menu.addSeparator()
 
-        # Novo card
+        export_action = QAction(
+            "Exportar visualização atual como HTML…",
+            self,
+        )
+        export_action.setShortcut(
+            QKeySequence("Ctrl+E")
+        )
+        export_action.triggered.connect(
+            self._export_html
+        )
+        file_menu.addAction(
+            export_action
+        )
+
+        # --------------------------------------------------------------
+        # Editar
+        # --------------------------------------------------------------
+
         add_node_action = QAction(
             "Novo card",
             self,
@@ -275,7 +345,9 @@ class MainWindow(QMainWindow):
         add_node_action.triggered.connect(
             self._add_manual_node
         )
-        toolbar.addAction(add_node_action)
+        edit_menu.addAction(
+            add_node_action
+        )
 
         add_note_action = QAction(
             "Nova nota",
@@ -287,7 +359,7 @@ class MainWindow(QMainWindow):
         add_note_action.triggered.connect(
             self._add_note
         )
-        toolbar.addAction(
+        edit_menu.addAction(
             add_note_action
         )
 
@@ -301,7 +373,7 @@ class MainWindow(QMainWindow):
         note_selection_action.triggered.connect(
             self._add_note_for_selection
         )
-        toolbar.addAction(
+        edit_menu.addAction(
             note_selection_action
         )
 
@@ -315,80 +387,73 @@ class MainWindow(QMainWindow):
         metadata_action.triggered.connect(
             self._edit_selected_metadata
         )
-        toolbar.addAction(
+        edit_menu.addAction(
             metadata_action
         )
 
-        toolbar.addSeparator()
+        edit_menu.addSeparator()
 
-        # Abrir projeto
-        open_action = QAction(
-            "Abrir",
+        delete_action = QAction(
+            "Excluir seleção",
             self,
         )
-        open_action.setShortcut(
-            QKeySequence("Ctrl+O")
+        delete_action.setShortcut(
+            QKeySequence(
+                Qt.Key.Key_Delete
+            )
         )
-        open_action.triggered.connect(
-            self._open_project
+        delete_action.triggered.connect(
+            self._delete_selected
         )
-        toolbar.addAction(open_action)
+        edit_menu.addAction(
+            delete_action
+        )
 
-        # Salvar projeto
-        save_action = QAction(
-            "Salvar",
+        clear_action = QAction(
+            "Limpar grafo",
             self,
         )
-        save_action.setShortcut(
-            QKeySequence("Ctrl+S")
+        clear_action.triggered.connect(
+            self._clear_graph
         )
-        save_action.triggered.connect(
-            self._save_project
+        edit_menu.addAction(
+            clear_action
         )
-        toolbar.addAction(save_action)
 
-        # Salvar projeto como
-        save_as_action = QAction(
-            "Salvar como",
+        # --------------------------------------------------------------
+        # Visualização
+        # --------------------------------------------------------------
+
+        browser_action = QAction(
+            "Browser",
             self,
         )
-        save_as_action.setShortcut(
-            QKeySequence("Ctrl+Shift+S")
+        browser_action.setShortcut(
+            QKeySequence("Ctrl+L")
         )
-        save_as_action.triggered.connect(
-            self._save_project_as
+        browser_action.triggered.connect(
+            self._show_browser
         )
-        toolbar.addAction(save_as_action)
+        view_menu.addAction(
+            browser_action
+        )
 
-        export_action = QAction(
-            "Exportar HTML",
+        details_action = QAction(
+            "Details",
             self,
         )
-        export_action.setShortcut(
-            QKeySequence("Ctrl+E")
+        details_action.setShortcut(
+            QKeySequence("Ctrl+D")
         )
-        export_action.triggered.connect(
-            self._export_html
+        details_action.triggered.connect(
+            self._show_details
         )
-        toolbar.addAction(
-            export_action
+        view_menu.addAction(
+            details_action
         )
 
-        toolbar.addSeparator()
+        view_menu.addSeparator()
 
-        # Demo
-        demo_action = QAction(
-            "Carregar demo",
-            self,
-        )
-        demo_action.triggered.connect(
-            self._load_demo_graph
-        )
-        toolbar.addAction(demo_action)
-
-        toolbar.addSeparator()
-
-        # Investigation View
         self._investigation_action = QAction(
             "Investigation",
             self,
@@ -402,11 +467,28 @@ class MainWindow(QMainWindow):
         self._investigation_action.toggled.connect(
             self._set_investigation_mode
         )
-        toolbar.addAction(
+        view_menu.addAction(
             self._investigation_action
         )
 
-        # Organizar grafo
+        fit_action = QAction(
+            "Fit Graph",
+            self,
+        )
+        fit_action.setShortcut(
+            QKeySequence("Ctrl+0")
+        )
+        fit_action.triggered.connect(
+            self.canvas.fit_graph
+        )
+        view_menu.addAction(
+            fit_action
+        )
+
+        # --------------------------------------------------------------
+        # Layout
+        # --------------------------------------------------------------
+
         graph_layout_action = QAction(
             "Organizar grafo",
             self,
@@ -417,11 +499,10 @@ class MainWindow(QMainWindow):
         graph_layout_action.triggered.connect(
             self._organize_graph
         )
-        toolbar.addAction(
+        layout_menu.addAction(
             graph_layout_action
         )
 
-        # Organizar árvore
         organize_action = QAction(
             "Organizar árvore",
             self,
@@ -432,13 +513,14 @@ class MainWindow(QMainWindow):
         organize_action.triggered.connect(
             self._organize_tree
         )
-        toolbar.addAction(
+        layout_menu.addAction(
             organize_action
         )
 
-        # Orientação
+        layout_menu.addSeparator()
+
         self._vertical_layout_action = QAction(
-            "Vertical",
+            "Orientação vertical",
             self,
         )
         self._vertical_layout_action.setCheckable(
@@ -450,63 +532,34 @@ class MainWindow(QMainWindow):
         self._vertical_layout_action.toggled.connect(
             self._set_vertical_layout
         )
-        toolbar.addAction(
+        layout_menu.addAction(
             self._vertical_layout_action
         )
 
-        # Fit
-        fit_action = QAction(
-            "Fit Graph",
+        # --------------------------------------------------------------
+        # Ferramentas
+        # --------------------------------------------------------------
+
+        demo_action = QAction(
+            "Carregar demo",
             self,
         )
-        fit_action.setShortcut(
-            QKeySequence("Ctrl+0")
+        demo_action.triggered.connect(
+            self._load_demo_graph
         )
-        fit_action.triggered.connect(
-            self.canvas.fit_graph
+        tools_menu.addAction(
+            demo_action
         )
-        toolbar.addAction(fit_action)
-
-        # Delete
-        delete_action = QAction(
-            "Excluir",
-            self,
-        )
-        delete_action.setShortcut(
-            QKeySequence(Qt.Key.Key_Delete)
-        )
-        delete_action.triggered.connect(
-            self._delete_selected
-        )
-
-        # Mantém o shortcut funcionando mesmo
-        # quando a toolbar não tem foco.
-        self.addAction(delete_action)
-        toolbar.addAction(delete_action)
-
-        toolbar.addSeparator()
-
-        # Clear
-        clear_action = QAction(
-            "Limpar",
-            self,
-        )
-        clear_action.triggered.connect(
-            self._clear_graph
-        )
-        toolbar.addAction(clear_action)
 
     def _create_analysis_toolbar(
         self,
     ) -> None:
         """
-        Segunda toolbar dedicada a Focus/Filters/Search.
+        Toolbar dedicada a Focus/Filters/Search.
 
-        Ela fica separada da toolbar de comandos para que o canvas
-        continue legível mesmo com vários filtros disponíveis.
+        Os comandos gerais ficam no menu; esta barra permanece porque
+        seus controles representam uma consulta viva sobre o canvas.
         """
-
-        self.addToolBarBreak()
 
         self.analysis_toolbar = (
             AnalysisToolbar(
@@ -714,7 +767,8 @@ class MainWindow(QMainWindow):
         # Investigation/Focus/Filters usam posições temporárias.
         if self._analysis_view_required():
             self._refresh_analysis_view(
-                fit=True
+                fit=True,
+                preserve_positions=False,
             )
             return
 
@@ -770,7 +824,8 @@ class MainWindow(QMainWindow):
             self._last_raw_layout = "graph"
 
             self._refresh_analysis_view(
-                fit=True
+                fit=True,
+                preserve_positions=False,
             )
             return
 
@@ -954,10 +1009,136 @@ class MainWindow(QMainWindow):
             fit=True
         )
 
+    def _remember_analysis_positions(
+        self,
+    ) -> None:
+        self._analysis_position_cache.update(
+            self.canvas.visible_view_positions()
+        )
+
+    def _resolve_analysis_positions(
+        self,
+        view_graph,
+        fallback_positions: dict[
+            str,
+            tuple[float, float],
+        ],
+        *,
+        preserve_positions: bool,
+    ) -> dict[
+        str,
+        tuple[float, float],
+    ]:
+        positions = dict(
+            fallback_positions
+        )
+
+        if not preserve_positions:
+            self._analysis_position_cache.clear()
+            return positions
+
+        cache = self._analysis_position_cache
+
+        for view_id, view_node in (
+            view_graph.nodes.items()
+        ):
+            cached = cache.get(
+                view_id
+            )
+
+            if cached is not None:
+                positions[
+                    view_id
+                ] = cached
+                continue
+
+            if view_node.is_real:
+                raw_id = (
+                    view_node.raw_node_ids[
+                        0
+                    ]
+                )
+
+                card = self.canvas.get_node(
+                    raw_id
+                )
+
+                if card is None:
+                    continue
+
+                point = card.scenePos()
+
+                positions[
+                    view_id
+                ] = (
+                    float(
+                        point.x()
+                    ),
+                    float(
+                        point.y()
+                    ),
+                )
+
+                continue
+
+            member_positions = [
+                cache[
+                    raw_id
+                ]
+                for raw_id
+                in view_node.raw_node_ids
+                if raw_id in cache
+            ]
+
+            if not member_positions:
+                member_positions = [
+                    (
+                        float(
+                            card.scenePos().x()
+                        ),
+                        float(
+                            card.scenePos().y()
+                        ),
+                    )
+                    for raw_id
+                    in view_node.raw_node_ids
+                    if (
+                        card := self.canvas.get_node(
+                            raw_id
+                        )
+                    )
+                    is not None
+                ]
+
+            if member_positions:
+                positions[
+                    view_id
+                ] = (
+                    sum(
+                        point[0]
+                        for point
+                        in member_positions
+                    )
+                    / len(
+                        member_positions
+                    ),
+                    sum(
+                        point[1]
+                        for point
+                        in member_positions
+                    )
+                    / len(
+                        member_positions
+                    ),
+                )
+
+        return positions
+
     def _refresh_analysis_view(
         self,
         *,
         fit: bool = True,
+        preserve_positions: bool = True,
     ) -> None:
         """
         Pipeline de visualização:
@@ -977,6 +1158,9 @@ class MainWindow(QMainWindow):
 
         if not self.canvas.nodes:
             return
+
+        if preserve_positions:
+            self._remember_analysis_positions()
 
         raw_graph = (
             self._build_graph_model()
@@ -1071,9 +1255,23 @@ class MainWindow(QMainWindow):
             layout_result
         )
 
+        positions = (
+            self._resolve_analysis_positions(
+                view_graph,
+                layout_result.positions,
+                preserve_positions=(
+                    preserve_positions
+                ),
+            )
+        )
+
         self.canvas.apply_view_graph(
             view_graph,
-            layout_result.positions,
+            positions,
+        )
+
+        self._analysis_position_cache.update(
+            positions
         )
 
         if fit:
@@ -3383,6 +3581,31 @@ class MainWindow(QMainWindow):
             return
 
         card.update()
+
+        note_color = str(
+            (card.node.metadata or {}).get(
+                "color",
+                "#D9A441",
+            )
+            or "#D9A441"
+        )
+
+        for edge in self.canvas.edges.values():
+            transition = edge.transition
+
+            if (
+                transition.source_id == node_id
+                and transition.metadata.get(
+                    "manual_note"
+                )
+            ):
+                transition.metadata[
+                    "note_color"
+                ] = note_color
+
+                edge.refresh_style()
+
+        self._schedule_investigation_refresh()
         self._on_canvas_selection_changed()
         self.statusBar().showMessage(
             "Nota atualizada.",
@@ -3434,6 +3657,17 @@ class MainWindow(QMainWindow):
                 else "manual_edge"
             ): True,
         }
+
+        if source_is_note:
+            metadata[
+                "note_color"
+            ] = str(
+                (source.node.metadata or {}).get(
+                    "color",
+                    "#D9A441",
+                )
+                or "#D9A441"
+            )
 
         transition = Transition(
             source_id=source_id,
@@ -3515,6 +3749,107 @@ class MainWindow(QMainWindow):
     # HTML export
     # ------------------------------------------------------------------
 
+    def _html_export_snapshot(
+        self,
+    ) -> tuple[
+        list[PageNode],
+        list[Transition],
+    ]:
+        """
+        Captura exatamente a projeção visual atual do canvas.
+
+        Em Raw Graph exporta os cards/edges reais nas posições atuais.
+        Em Focus/Filters/Investigation exporta apenas os itens visíveis,
+        incluindo GroupCards e as edges virtuais da projeção.
+        """
+
+        nodes: list[PageNode] = []
+
+        for card in self.canvas.nodes.values():
+            if not card.isVisible():
+                continue
+
+            node = PageNode.from_dict(
+                card.node.to_dict()
+            )
+
+            position = card.scenePos()
+            node.x = float(
+                position.x()
+            )
+            node.y = float(
+                position.y()
+            )
+
+            nodes.append(
+                node
+            )
+
+        for card in self.canvas.view_groups.values():
+            if not card.isVisible():
+                continue
+
+            view_node = card.view_node
+            metadata = dict(
+                view_node.metadata
+                or {}
+            )
+
+            metadata.update(
+                {
+                    "export_kind":
+                        "group",
+
+                    "group_kind":
+                        view_node.group_kind,
+
+                    "raw_node_ids":
+                        list(
+                            view_node.raw_node_ids
+                        ),
+                }
+            )
+
+            position = card.scenePos()
+
+            nodes.append(
+                PageNode(
+                    id=view_node.id,
+                    title=view_node.title,
+                    url="",
+                    kind=NodeKind.NOTE,
+                    method="GROUP",
+                    status=None,
+                    x=float(
+                        position.x()
+                    ),
+                    y=float(
+                        position.y()
+                    ),
+                    metadata=metadata,
+                )
+            )
+
+        if self.canvas.view_edges:
+            transitions = [
+                edge.transition
+                for edge
+                in self.canvas.view_edges.values()
+                if edge.isVisible()
+            ]
+        else:
+            transitions = [
+                edge.transition
+                for edge
+                in self.canvas.edges.values()
+                if edge.isVisible()
+            ]
+
+        return (
+            nodes,
+            transitions,
+        )
+
     def _export_html(self) -> None:
         if not self.canvas.nodes:
             QMessageBox.information(
@@ -3544,8 +3879,10 @@ class MainWindow(QMainWindow):
         if output_path.suffix.lower() not in {".html", ".htm"}:
             output_path = output_path.with_suffix(".html")
 
-        nodes = [card.node for card in self.canvas.nodes.values()]
-        transitions = [edge.transition for edge in self.canvas.edges.values()]
+        (
+            nodes,
+            transitions,
+        ) = self._html_export_snapshot()
 
         try:
             HtmlExporter().export(
@@ -3564,7 +3901,10 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(
-            f"HTML exportado: {output_path.name}",
+            "Visualização atual exportada: "
+            f"{output_path.name} · "
+            f"{len(nodes)} nodes · "
+            f"{len(transitions)} edges",
             5000,
         )
 
@@ -3813,6 +4153,7 @@ class MainWindow(QMainWindow):
         self._view_graph = None
         self._investigation_refresh_pending = False
         self._focus_root_ids.clear()
+        self._analysis_position_cache.clear()
 
         if hasattr(
             self,
@@ -3969,6 +4310,45 @@ class MainWindow(QMainWindow):
             """
             QMainWindow {
                 background: #14171C;
+            }
+
+            QMenuBar {
+                background: #171B21;
+                color: #D8DEE9;
+                border-bottom: 1px solid #2C323B;
+                padding: 3px 6px;
+            }
+
+            QMenuBar::item {
+                background: transparent;
+                border-radius: 5px;
+                padding: 6px 10px;
+            }
+
+            QMenuBar::item:selected {
+                background: #292F38;
+            }
+
+            QMenu {
+                background: #1B1F26;
+                color: #D8DEE9;
+                border: 1px solid #343B46;
+                padding: 5px;
+            }
+
+            QMenu::item {
+                border-radius: 5px;
+                padding: 7px 28px 7px 10px;
+            }
+
+            QMenu::item:selected {
+                background: #2B3440;
+            }
+
+            QMenu::separator {
+                height: 1px;
+                background: #343A45;
+                margin: 5px 8px;
             }
 
             QToolBar {

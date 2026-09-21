@@ -383,6 +383,64 @@ class SpiderCanvas(QGraphicsView):
             is not None
         )
 
+    def visible_view_positions(
+        self,
+    ) -> dict[
+        str,
+        tuple[float, float],
+    ]:
+        """
+        Snapshot das coordenadas visuais atualmente apresentadas.
+
+        Em Raw Graph retorna os PageCards visíveis. Em uma projeção
+        virtual inclui também GroupCards, sem alterar PageNode.x/y.
+        """
+
+        positions: dict[
+            str,
+            tuple[float, float],
+        ] = {}
+
+        for node_id, card in (
+            self.nodes.items()
+        ):
+            if not card.isVisible():
+                continue
+
+            position = card.scenePos()
+
+            positions[
+                node_id
+            ] = (
+                float(
+                    position.x()
+                ),
+                float(
+                    position.y()
+                ),
+            )
+
+        for view_id, card in (
+            self.view_groups.items()
+        ):
+            if not card.isVisible():
+                continue
+
+            position = card.scenePos()
+
+            positions[
+                view_id
+            ] = (
+                float(
+                    position.x()
+                ),
+                float(
+                    position.y()
+                ),
+            )
+
+        return positions
+
     def clear_virtual_view(
         self,
     ) -> None:
@@ -1079,8 +1137,23 @@ class SpiderCanvas(QGraphicsView):
         preview = QGraphicsPathItem()
         preview.setZValue(6)
 
+        note_color = QColor(
+            str(
+                (note.node.metadata or {}).get(
+                    "color",
+                    "#D9A441",
+                )
+                or "#D9A441"
+            )
+        )
+
+        if not note_color.isValid():
+            note_color = QColor(
+                "#D9A441"
+            )
+
         pen = QPen(
-            QColor("#D9A441"),
+            note_color,
             2.2,
         )
         pen.setStyle(

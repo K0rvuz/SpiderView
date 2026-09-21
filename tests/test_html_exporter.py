@@ -62,6 +62,14 @@ class HtmlExporterInteractionTests(unittest.TestCase):
             html,
         )
         self.assertIn(
+            "function cardAnchor",
+            html,
+        )
+        self.assertIn(
+            "marker-end",
+            html,
+        )
+        self.assertIn(
             "Arraste um card: mover",
             html,
         )

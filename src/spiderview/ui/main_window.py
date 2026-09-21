@@ -227,44 +227,104 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _create_toolbar(self) -> None:
-        toolbar = QToolBar(
-            "SpiderView",
+        """
+        Menus de comandos da aplicação.
+
+        A antiga toolbar principal cresceu junto com o projeto e
+        começou a competir por espaço com o canvas. Os comandos ficam
+        agora organizados por função, preservando todos os atalhos.
+        A toolbar Analysis continua separada por ser uma superfície
+        de consulta/filtros em tempo real.
+        """
+
+        menu_bar = self.menuBar()
+
+        file_menu = menu_bar.addMenu(
+            "Arquivo"
+        )
+
+        edit_menu = menu_bar.addMenu(
+            "Editar"
+        )
+
+        view_menu = menu_bar.addMenu(
+            "Visualização"
+        )
+
+        layout_menu = menu_bar.addMenu(
+            "Layout"
+        )
+
+        tools_menu = menu_bar.addMenu(
+            "Ferramentas"
+        )
+
+        # --------------------------------------------------------------
+        # Arquivo
+        # --------------------------------------------------------------
+
+        open_action = QAction(
+            "Abrir projeto",
             self,
         )
+        open_action.setShortcut(
+            QKeySequence("Ctrl+O")
+        )
+        open_action.triggered.connect(
+            self._open_project
+        )
+        file_menu.addAction(
+            open_action
+        )
 
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-
-        # Browser
-        browser_action = QAction(
-            "Browser",
+        save_action = QAction(
+            "Salvar",
             self,
         )
-        browser_action.setShortcut(
-            QKeySequence("Ctrl+L")
+        save_action.setShortcut(
+            QKeySequence("Ctrl+S")
         )
-        browser_action.triggered.connect(
-            self._show_browser
+        save_action.triggered.connect(
+            self._save_project
         )
-        toolbar.addAction(browser_action)
+        file_menu.addAction(
+            save_action
+        )
 
-        details_action = QAction(
-            "Details",
+        save_as_action = QAction(
+            "Salvar como…",
             self,
         )
-        details_action.setShortcut(
-            QKeySequence("Ctrl+D")
+        save_as_action.setShortcut(
+            QKeySequence("Ctrl+Shift+S")
         )
-        details_action.triggered.connect(
-            self._show_details
+        save_as_action.triggered.connect(
+            self._save_project_as
         )
-        toolbar.addAction(
-            details_action
+        file_menu.addAction(
+            save_as_action
         )
 
-        toolbar.addSeparator()
+        file_menu.addSeparator()
 
-        # Novo card
+        export_action = QAction(
+            "Exportar visualização atual como HTML…",
+            self,
+        )
+        export_action.setShortcut(
+            QKeySequence("Ctrl+E")
+        )
+        export_action.triggered.connect(
+            self._export_html
+        )
+        file_menu.addAction(
+            export_action
+        )
+
+        # --------------------------------------------------------------
+        # Editar
+        # --------------------------------------------------------------
+
         add_node_action = QAction(
             "Novo card",
             self,
@@ -275,7 +335,9 @@ class MainWindow(QMainWindow):
         add_node_action.triggered.connect(
             self._add_manual_node
         )
-        toolbar.addAction(add_node_action)
+        edit_menu.addAction(
+            add_node_action
+        )
 
         add_note_action = QAction(
             "Nova nota",
@@ -287,7 +349,7 @@ class MainWindow(QMainWindow):
         add_note_action.triggered.connect(
             self._add_note
         )
-        toolbar.addAction(
+        edit_menu.addAction(
             add_note_action
         )
 
@@ -301,7 +363,7 @@ class MainWindow(QMainWindow):
         note_selection_action.triggered.connect(
             self._add_note_for_selection
         )
-        toolbar.addAction(
+        edit_menu.addAction(
             note_selection_action
         )
 
@@ -315,80 +377,73 @@ class MainWindow(QMainWindow):
         metadata_action.triggered.connect(
             self._edit_selected_metadata
         )
-        toolbar.addAction(
+        edit_menu.addAction(
             metadata_action
         )
 
-        toolbar.addSeparator()
+        edit_menu.addSeparator()
 
-        # Abrir projeto
-        open_action = QAction(
-            "Abrir",
+        delete_action = QAction(
+            "Excluir seleção",
             self,
         )
-        open_action.setShortcut(
-            QKeySequence("Ctrl+O")
+        delete_action.setShortcut(
+            QKeySequence(
+                Qt.Key.Key_Delete
+            )
         )
-        open_action.triggered.connect(
-            self._open_project
+        delete_action.triggered.connect(
+            self._delete_selected
         )
-        toolbar.addAction(open_action)
+        edit_menu.addAction(
+            delete_action
+        )
 
-        # Salvar projeto
-        save_action = QAction(
-            "Salvar",
+        clear_action = QAction(
+            "Limpar grafo",
             self,
         )
-        save_action.setShortcut(
-            QKeySequence("Ctrl+S")
+        clear_action.triggered.connect(
+            self._clear_graph
         )
-        save_action.triggered.connect(
-            self._save_project
+        edit_menu.addAction(
+            clear_action
         )
-        toolbar.addAction(save_action)
 
-        # Salvar projeto como
-        save_as_action = QAction(
-            "Salvar como",
+        # --------------------------------------------------------------
+        # Visualização
+        # --------------------------------------------------------------
+
+        browser_action = QAction(
+            "Browser",
             self,
         )
-        save_as_action.setShortcut(
-            QKeySequence("Ctrl+Shift+S")
+        browser_action.setShortcut(
+            QKeySequence("Ctrl+L")
         )
-        save_as_action.triggered.connect(
-            self._save_project_as
+        browser_action.triggered.connect(
+            self._show_browser
         )
-        toolbar.addAction(save_as_action)
+        view_menu.addAction(
+            browser_action
+        )
 
-        export_action = QAction(
-            "Exportar HTML",
+        details_action = QAction(
+            "Details",
             self,
         )
-        export_action.setShortcut(
-            QKeySequence("Ctrl+E")
+        details_action.setShortcut(
+            QKeySequence("Ctrl+D")
         )
-        export_action.triggered.connect(
-            self._export_html
+        details_action.triggered.connect(
+            self._show_details
         )
-        toolbar.addAction(
-            export_action
+        view_menu.addAction(
+            details_action
         )
 
-        toolbar.addSeparator()
+        view_menu.addSeparator()
 
-        # Demo
-        demo_action = QAction(
-            "Carregar demo",
-            self,
-        )
-        demo_action.triggered.connect(
-            self._load_demo_graph
-        )
-        toolbar.addAction(demo_action)
-
-        toolbar.addSeparator()
-
-        # Investigation View
         self._investigation_action = QAction(
             "Investigation",
             self,
@@ -402,11 +457,28 @@ class MainWindow(QMainWindow):
         self._investigation_action.toggled.connect(
             self._set_investigation_mode
         )
-        toolbar.addAction(
+        view_menu.addAction(
             self._investigation_action
         )
 
-        # Organizar grafo
+        fit_action = QAction(
+            "Fit Graph",
+            self,
+        )
+        fit_action.setShortcut(
+            QKeySequence("Ctrl+0")
+        )
+        fit_action.triggered.connect(
+            self.canvas.fit_graph
+        )
+        view_menu.addAction(
+            fit_action
+        )
+
+        # --------------------------------------------------------------
+        # Layout
+        # --------------------------------------------------------------
+
         graph_layout_action = QAction(
             "Organizar grafo",
             self,
@@ -417,11 +489,10 @@ class MainWindow(QMainWindow):
         graph_layout_action.triggered.connect(
             self._organize_graph
         )
-        toolbar.addAction(
+        layout_menu.addAction(
             graph_layout_action
         )
 
-        # Organizar árvore
         organize_action = QAction(
             "Organizar árvore",
             self,
@@ -432,13 +503,14 @@ class MainWindow(QMainWindow):
         organize_action.triggered.connect(
             self._organize_tree
         )
-        toolbar.addAction(
+        layout_menu.addAction(
             organize_action
         )
 
-        # Orientação
+        layout_menu.addSeparator()
+
         self._vertical_layout_action = QAction(
-            "Vertical",
+            "Orientação vertical",
             self,
         )
         self._vertical_layout_action.setCheckable(
@@ -450,63 +522,34 @@ class MainWindow(QMainWindow):
         self._vertical_layout_action.toggled.connect(
             self._set_vertical_layout
         )
-        toolbar.addAction(
+        layout_menu.addAction(
             self._vertical_layout_action
         )
 
-        # Fit
-        fit_action = QAction(
-            "Fit Graph",
+        # --------------------------------------------------------------
+        # Ferramentas
+        # --------------------------------------------------------------
+
+        demo_action = QAction(
+            "Carregar demo",
             self,
         )
-        fit_action.setShortcut(
-            QKeySequence("Ctrl+0")
+        demo_action.triggered.connect(
+            self._load_demo_graph
         )
-        fit_action.triggered.connect(
-            self.canvas.fit_graph
+        tools_menu.addAction(
+            demo_action
         )
-        toolbar.addAction(fit_action)
-
-        # Delete
-        delete_action = QAction(
-            "Excluir",
-            self,
-        )
-        delete_action.setShortcut(
-            QKeySequence(Qt.Key.Key_Delete)
-        )
-        delete_action.triggered.connect(
-            self._delete_selected
-        )
-
-        # Mantém o shortcut funcionando mesmo
-        # quando a toolbar não tem foco.
-        self.addAction(delete_action)
-        toolbar.addAction(delete_action)
-
-        toolbar.addSeparator()
-
-        # Clear
-        clear_action = QAction(
-            "Limpar",
-            self,
-        )
-        clear_action.triggered.connect(
-            self._clear_graph
-        )
-        toolbar.addAction(clear_action)
 
     def _create_analysis_toolbar(
         self,
     ) -> None:
         """
-        Segunda toolbar dedicada a Focus/Filters/Search.
+        Toolbar dedicada a Focus/Filters/Search.
 
-        Ela fica separada da toolbar de comandos para que o canvas
-        continue legível mesmo com vários filtros disponíveis.
+        Os comandos gerais ficam no menu; esta barra permanece porque
+        seus controles representam uma consulta viva sobre o canvas.
         """
-
-        self.addToolBarBreak()
 
         self.analysis_toolbar = (
             AnalysisToolbar(

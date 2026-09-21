@@ -3594,6 +3594,107 @@ class MainWindow(QMainWindow):
     # HTML export
     # ------------------------------------------------------------------
 
+    def _html_export_snapshot(
+        self,
+    ) -> tuple[
+        list[PageNode],
+        list[Transition],
+    ]:
+        """
+        Captura exatamente a projeção visual atual do canvas.
+
+        Em Raw Graph exporta os cards/edges reais nas posições atuais.
+        Em Focus/Filters/Investigation exporta apenas os itens visíveis,
+        incluindo GroupCards e as edges virtuais da projeção.
+        """
+
+        nodes: list[PageNode] = []
+
+        for card in self.canvas.nodes.values():
+            if not card.isVisible():
+                continue
+
+            node = PageNode.from_dict(
+                card.node.to_dict()
+            )
+
+            position = card.scenePos()
+            node.x = float(
+                position.x()
+            )
+            node.y = float(
+                position.y()
+            )
+
+            nodes.append(
+                node
+            )
+
+        for card in self.canvas.view_groups.values():
+            if not card.isVisible():
+                continue
+
+            view_node = card.view_node
+            metadata = dict(
+                view_node.metadata
+                or {}
+            )
+
+            metadata.update(
+                {
+                    "export_kind":
+                        "group",
+
+                    "group_kind":
+                        view_node.group_kind,
+
+                    "raw_node_ids":
+                        list(
+                            view_node.raw_node_ids
+                        ),
+                }
+            )
+
+            position = card.scenePos()
+
+            nodes.append(
+                PageNode(
+                    id=view_node.id,
+                    title=view_node.title,
+                    url="",
+                    kind=NodeKind.NOTE,
+                    method="GROUP",
+                    status=None,
+                    x=float(
+                        position.x()
+                    ),
+                    y=float(
+                        position.y()
+                    ),
+                    metadata=metadata,
+                )
+            )
+
+        if self.canvas.view_edges:
+            transitions = [
+                edge.transition
+                for edge
+                in self.canvas.view_edges.values()
+                if edge.isVisible()
+            ]
+        else:
+            transitions = [
+                edge.transition
+                for edge
+                in self.canvas.edges.values()
+                if edge.isVisible()
+            ]
+
+        return (
+            nodes,
+            transitions,
+        )
+
     def _export_html(self) -> None:
         if not self.canvas.nodes:
             QMessageBox.information(
@@ -3623,8 +3724,10 @@ class MainWindow(QMainWindow):
         if output_path.suffix.lower() not in {".html", ".htm"}:
             output_path = output_path.with_suffix(".html")
 
-        nodes = [card.node for card in self.canvas.nodes.values()]
-        transitions = [edge.transition for edge in self.canvas.edges.values()]
+        (
+            nodes,
+            transitions,
+        ) = self._html_export_snapshot()
 
         try:
             HtmlExporter().export(
@@ -3643,7 +3746,10 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(
-            f"HTML exportado: {output_path.name}",
+            "Visualização atual exportada: "
+            f"{output_path.name} · "
+            f"{len(nodes)} nodes · "
+            f"{len(transitions)} edges",
             5000,
         )
 

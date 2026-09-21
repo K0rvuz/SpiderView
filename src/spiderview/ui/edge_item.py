@@ -180,6 +180,18 @@ class EdgeItem(QGraphicsPathItem):
         )
 
         if metadata.get(
+            "manual_note"
+        ):
+            pen = QPen(
+                QColor("#D9A441"),
+                2.2,
+            )
+            pen.setStyle(
+                Qt.PenStyle.DashLine
+            )
+            return pen
+
+        if metadata.get(
             "view_membership"
         ):
             pen = QPen(

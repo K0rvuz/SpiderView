@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..browser.browser_host import BrowserHost
+from ..export.html_exporter import HtmlExportError, HtmlExporter
 from ..graph import (
     GraphModel,
     GroupingPolicy,
@@ -33,6 +34,8 @@ from .canvas import SpiderCanvas
 from .edge_item import EdgeItem
 from .group_card import GroupCard
 from .node_details import NodeDetailsPanel
+from .node_metadata_dialog import NodeMetadataDialog
+from .note_dialog import NoteDialog
 from .page_card import PageCard
 from .tree_layout import arrange_tree
 
@@ -274,6 +277,48 @@ class MainWindow(QMainWindow):
         )
         toolbar.addAction(add_node_action)
 
+        add_note_action = QAction(
+            "Nova nota",
+            self,
+        )
+        add_note_action.setShortcut(
+            QKeySequence("Ctrl+Shift+N")
+        )
+        add_note_action.triggered.connect(
+            self._add_note
+        )
+        toolbar.addAction(
+            add_note_action
+        )
+
+        note_selection_action = QAction(
+            "Nota da seleção",
+            self,
+        )
+        note_selection_action.setShortcut(
+            QKeySequence("Ctrl+Alt+N")
+        )
+        note_selection_action.triggered.connect(
+            self._add_note_for_selection
+        )
+        toolbar.addAction(
+            note_selection_action
+        )
+
+        metadata_action = QAction(
+            "Tags / Status",
+            self,
+        )
+        metadata_action.setShortcut(
+            QKeySequence("Alt+Return")
+        )
+        metadata_action.triggered.connect(
+            self._edit_selected_metadata
+        )
+        toolbar.addAction(
+            metadata_action
+        )
+
         toolbar.addSeparator()
 
         # Abrir projeto
@@ -314,6 +359,20 @@ class MainWindow(QMainWindow):
             self._save_project_as
         )
         toolbar.addAction(save_as_action)
+
+        export_action = QAction(
+            "Exportar HTML",
+            self,
+        )
+        export_action.setShortcut(
+            QKeySequence("Ctrl+E")
+        )
+        export_action.triggered.connect(
+            self._export_html
+        )
+        toolbar.addAction(
+            export_action
+        )
 
         toolbar.addSeparator()
 
@@ -1170,6 +1229,10 @@ class MainWindow(QMainWindow):
             self._toggle_view_group
         )
 
+        self.canvas.manualConnectionRequested.connect(
+            self._create_manual_note_connection
+        )
+
         self.canvas.scene().selectionChanged.connect(
             self._on_canvas_selection_changed
         )
@@ -1208,8 +1271,13 @@ class MainWindow(QMainWindow):
             "Ctrl+Alt+0  Organizar     •     "
             "Scroll  Zoom     •     "
             "MMB  Pan     •     "
-            "Drag  Move card     •     "
-            "Double Click  Open page"
+            "Drag background  Select     •     "
+            "Ctrl+Click  Multi-select     •     "
+            "Drag card  Move selection     •     "
+            "Connector -> card  Manual link     •     "
+            "Ctrl+Alt+N  Note from selection     •     "
+            "Alt+Enter  Tags/Status     •     "
+            "Double Click  Open/Edit"
         )
 
     # ------------------------------------------------------------------
@@ -1384,6 +1452,12 @@ class MainWindow(QMainWindow):
         card = self.canvas.get_node(node_id)
 
         if card is None:
+            return
+
+        if card.node.kind == NodeKind.NOTE:
+            self._edit_note(
+                node_id
+            )
             return
 
         if card.node.kind == NodeKind.API:
@@ -3102,6 +3176,299 @@ class MainWindow(QMainWindow):
         self.canvas.scene().clearSelection()
         card.setSelected(True)
 
+    def _add_note(self) -> None:
+        center = self.canvas.mapToScene(
+            self.canvas
+            .viewport()
+            .rect()
+            .center()
+        )
+
+        counter = self._manual_node_counter
+        node = PageNode(
+            title=f"Nota {counter}",
+            url="",
+            kind=NodeKind.NOTE,
+            method="",
+            status=None,
+            x=center.x() - 155,
+            y=center.y() - 95,
+            metadata={
+                "note_text": "",
+                "tags": [],
+                "color": "#D9A441",
+            },
+        )
+        self._manual_node_counter += 1
+
+        card = self.canvas.add_node(
+            node
+        )
+        self.canvas.scene().clearSelection()
+        card.setSelected(True)
+        self._edit_note(
+            node.id
+        )
+
+    def _selected_raw_cards(
+        self,
+    ) -> list[PageCard]:
+        result: list[PageCard] = []
+
+        for item in (
+            self.canvas
+            .scene()
+            .selectedItems()
+        ):
+            if not isinstance(
+                item,
+                PageCard,
+            ):
+                continue
+
+            if (
+                item.node.id
+                not in self.canvas.nodes
+            ):
+                continue
+
+            result.append(
+                item
+            )
+
+        return result
+
+    def _add_note_for_selection(
+        self,
+    ) -> None:
+        targets = self._selected_raw_cards()
+
+        if not targets:
+            self.statusBar().showMessage(
+                "Selecione um ou mais cards antes de criar a nota.",
+                3500,
+            )
+            return
+
+        average_x = sum(
+            card.scenePos().x()
+            for card in targets
+        ) / len(targets)
+
+        average_y = sum(
+            card.scenePos().y()
+            for card in targets
+        ) / len(targets)
+
+        counter = self._manual_node_counter
+
+        node = PageNode(
+            title=f"Nota {counter}",
+            url="",
+            kind=NodeKind.NOTE,
+            method="",
+            status=None,
+            x=average_x - 155,
+            y=average_y - 300,
+            metadata={
+                "note_text": "",
+                "tags": [],
+                "color": "#D9A441",
+            },
+        )
+
+        self._manual_node_counter += 1
+
+        card = self.canvas.add_node(
+            node
+        )
+
+        if not NoteDialog.edit_node(
+            self,
+            node,
+        ):
+            self.canvas.remove_node(
+                node.id
+            )
+            return
+
+        card.update()
+
+        marker = getattr(
+            card,
+            "_metadata_marker",
+            None,
+        )
+        if marker is not None:
+            marker.refresh()
+
+        target_ids = [
+            target.node.id
+            for target in targets
+            if target.node.id != node.id
+        ]
+
+        for target_id in target_ids:
+            self._create_manual_note_connection(
+                node.id,
+                target_id,
+            )
+
+        self.canvas.scene().clearSelection()
+        card.setSelected(
+            True
+        )
+
+        self.statusBar().showMessage(
+            f"Nota criada e ligada a {len(target_ids)} card(s).",
+            4000,
+        )
+
+    def _edit_selected_metadata(
+        self,
+    ) -> None:
+        cards = self._selected_raw_cards()
+
+        if not cards:
+            self.statusBar().showMessage(
+                "Selecione um ou mais cards para editar tags/status.",
+                3500,
+            )
+            return
+
+        nodes = [
+            card.node
+            for card in cards
+        ]
+
+        if not NodeMetadataDialog.edit_nodes(
+            self,
+            nodes,
+        ):
+            return
+
+        for card in cards:
+            marker = getattr(
+                card,
+                "_metadata_marker",
+                None,
+            )
+
+            if marker is not None:
+                marker.refresh()
+
+            card.update()
+
+        self._schedule_investigation_refresh()
+
+        self.statusBar().showMessage(
+            f"Metadados atualizados em {len(cards)} card(s).",
+            3500,
+        )
+
+    def _edit_note(
+        self,
+        node_id: str,
+    ) -> None:
+        card = self.canvas.get_node(
+            node_id
+        )
+        if card is None or card.node.kind != NodeKind.NOTE:
+            return
+
+        if not NoteDialog.edit_node(
+            self,
+            card.node,
+        ):
+            return
+
+        card.update()
+        self._on_canvas_selection_changed()
+        self.statusBar().showMessage(
+            "Nota atualizada.",
+            2500,
+        )
+
+    def _create_manual_note_connection(
+        self,
+        source_id: str,
+        target_id: str,
+    ) -> None:
+        source = self.canvas.get_node(
+            source_id
+        )
+        target = self.canvas.get_node(
+            target_id
+        )
+
+        if (
+            source is None
+            or target is None
+            or source_id == target_id
+        ):
+            return
+
+        source_is_note = (
+            source.node.kind
+            == NodeKind.NOTE
+        )
+
+        for edge in self.canvas.edges.values():
+            transition = edge.transition
+
+            if (
+                transition.source_id == source_id
+                and transition.target_id == target_id
+                and transition.type == TransitionType.MANUAL
+            ):
+                self.statusBar().showMessage(
+                    "Essa conexão manual já existe.",
+                    3000,
+                )
+                return
+
+        metadata = {
+            (
+                "manual_note"
+                if source_is_note
+                else "manual_edge"
+            ): True,
+        }
+
+        transition = Transition(
+            source_id=source_id,
+            target_id=target_id,
+            type=TransitionType.MANUAL,
+            label=(
+                "note"
+                if source_is_note
+                else "manual"
+            ),
+            metadata=metadata,
+        )
+
+        edge = self.canvas.add_edge(
+            transition
+        )
+
+        self.canvas.scene().clearSelection()
+        edge.setSelected(
+            True
+        )
+
+        self._schedule_investigation_refresh()
+
+        prefix = (
+            "Nota"
+            if source_is_note
+            else "Conexão manual"
+        )
+
+        self.statusBar().showMessage(
+            f'{prefix}: "{source.node.title}" -> "{target.node.title}"',
+            4000,
+        )
+
     # ------------------------------------------------------------------
     # Delete
     # ------------------------------------------------------------------
@@ -3143,6 +3510,63 @@ class MainWindow(QMainWindow):
                 self.canvas.remove_node(
                     node_id
                 )
+
+    # ------------------------------------------------------------------
+    # HTML export
+    # ------------------------------------------------------------------
+
+    def _export_html(self) -> None:
+        if not self.canvas.nodes:
+            QMessageBox.information(
+                self,
+                "Exportar HTML",
+                "O canvas está vazio.",
+            )
+            return
+
+        if self._project_dir is not None:
+            initial_path = self._project_dir.parent / f"{self._project_dir.stem}.html"
+            title = self._project_dir.stem
+        else:
+            initial_path = Path.cwd() / "spiderview-investigation.html"
+            title = "SpiderView Investigation"
+
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar investigação como HTML",
+            str(initial_path),
+            "HTML (*.html)",
+        )
+        if not selected:
+            return
+
+        output_path = Path(selected)
+        if output_path.suffix.lower() not in {".html", ".htm"}:
+            output_path = output_path.with_suffix(".html")
+
+        nodes = [card.node for card in self.canvas.nodes.values()]
+        transitions = [edge.transition for edge in self.canvas.edges.values()]
+
+        try:
+            HtmlExporter().export(
+                output_path,
+                nodes,
+                transitions,
+                title=title,
+                redact_sensitive=True,
+            )
+        except HtmlExportError as exc:
+            QMessageBox.critical(
+                self,
+                "Erro ao exportar HTML",
+                str(exc),
+            )
+            return
+
+        self.statusBar().showMessage(
+            f"HTML exportado: {output_path.name}",
+            5000,
+        )
 
     # ------------------------------------------------------------------
     # Project persistence

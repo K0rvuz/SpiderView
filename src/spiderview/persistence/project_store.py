@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from ..models import PageNode, Transition
+from .migrations import migrate_payload
 
 
 class ProjectStoreError(Exception):
@@ -29,7 +30,7 @@ class ProjectStore:
     """
 
     FORMAT_NAME = "spiderview"
-    FORMAT_VERSION = 1
+    FORMAT_VERSION = 2
 
     PROJECT_FILE = "project.json"
     PREVIEWS_DIR = "previews"
@@ -102,6 +103,9 @@ class ProjectStore:
         payload = {
             "format": cls.FORMAT_NAME,
             "version": cls.FORMAT_VERSION,
+            "project": {
+                "schema": "graph-v2",
+            },
             "nodes": serialized_nodes,
             "transitions": serialized_transitions,
         }
@@ -198,15 +202,23 @@ class ProjectStore:
                 "Este arquivo não é um projeto SpiderView válido."
             )
 
+        try:
+            payload = migrate_payload(
+                payload,
+                target_version=cls.FORMAT_VERSION,
+            )
+        except ValueError as exc:
+            raise ProjectStoreError(
+                str(exc)
+            ) from exc
+
         version = payload.get(
             "version"
         )
 
         if version != cls.FORMAT_VERSION:
             raise ProjectStoreError(
-                "Versão de projeto não suportada: "
-                f"{version!r}. "
-                f"Versão atual: {cls.FORMAT_VERSION}."
+                "Falha ao migrar o projeto para a versão atual."
             )
 
         raw_nodes = payload.get(

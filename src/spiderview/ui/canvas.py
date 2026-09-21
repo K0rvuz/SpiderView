@@ -13,21 +13,27 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QColor,
     QPainter,
+    QPainterPath,
     QPen,
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
+    QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
 )
 
 from ..graph.view_graph import ViewGraph
 from ..models import (
+    NodeKind,
     PageNode,
     Transition,
 )
+from .connection_handle import ConnectionHandle
 from .edge_item import EdgeItem
 from .group_card import GroupCard
+from .metadata_marker import MetadataMarker
+from .note_card import NoteCard
 from .page_card import PageCard
 
 
@@ -45,6 +51,9 @@ class SpiderCanvas(QGraphicsView):
 
     nodeDoubleClicked = Signal(str)
     groupDoubleClicked = Signal(str)
+
+    # Note -> raw card. A MainWindow cria a Transition persistente.
+    manualConnectionRequested = Signal(str, str)
 
     # Zoom manual normal.
     MIN_ZOOM = 0.08
@@ -140,8 +149,10 @@ class SpiderCanvas(QGraphicsView):
             QGraphicsView.ViewportAnchor.NoAnchor
         )
 
+        # LMB no fundo cria uma caixa de seleção. Arrastar um card
+        # continua movendo o card; MMB permanece reservado ao pan.
         self.setDragMode(
-            QGraphicsView.DragMode.NoDrag
+            QGraphicsView.DragMode.RubberBandDrag
         )
 
         self.setBackgroundBrush(
@@ -162,6 +173,11 @@ class SpiderCanvas(QGraphicsView):
             QPoint()
         )
 
+        # Drag de conexão manual iniciado pelo conector de uma Note.
+        self._manual_connection_source_id: str | None = None
+        self._manual_connection_preview: QGraphicsPathItem | None = None
+        self._manual_connection_source_point: QPointF | None = None
+
     # ------------------------------------------------------------------
     # Raw Nodes
     # ------------------------------------------------------------------
@@ -175,13 +191,33 @@ class SpiderCanvas(QGraphicsView):
                 node.id
             ]
 
-        card = PageCard(
+        card_cls = (
+            NoteCard
+            if node.kind == NodeKind.NOTE
+            else PageCard
+        )
+
+        card = card_cls(
             node
         )
 
         self._scene.addItem(
             card
         )
+
+        marker = MetadataMarker(
+            card
+        )
+        card._metadata_marker = marker
+
+        if node.kind != NodeKind.NOTE:
+            handle = ConnectionHandle(
+                card
+            )
+            handle.connectionStarted.connect(
+                self._on_generic_connection_started
+            )
+            card._connection_handle = handle
 
         card.setPos(
             node.x,
@@ -619,6 +655,7 @@ class SpiderCanvas(QGraphicsView):
     # ------------------------------------------------------------------
 
     def clear_graph(self) -> None:
+        self._cancel_manual_connection()
         self.clear_virtual_view()
 
         self._scene.clear()
@@ -1000,6 +1037,207 @@ class SpiderCanvas(QGraphicsView):
         self._update_edge_label_lod()
 
     # ------------------------------------------------------------------
+    # Manual connections
+    # ------------------------------------------------------------------
+
+    def _on_generic_connection_started(
+        self,
+        node_id: str,
+        scene_pos: QPointF,
+    ) -> None:
+        card = self.nodes.get(
+            node_id
+        )
+
+        if card is None:
+            return
+
+        self._begin_manual_connection(
+            card,
+            scene_pos,
+        )
+
+    # ------------------------------------------------------------------
+    # Manual Note connections
+    # ------------------------------------------------------------------
+
+    def _begin_manual_connection(
+        self,
+        note: NoteCard,
+        scene_pos: QPointF,
+    ) -> None:
+        self._cancel_manual_connection()
+
+        self._manual_connection_source_id = (
+            note.node.id
+        )
+
+        self._manual_connection_source_point = QPointF(
+            scene_pos
+        )
+
+        preview = QGraphicsPathItem()
+        preview.setZValue(6)
+
+        pen = QPen(
+            QColor("#D9A441"),
+            2.2,
+        )
+        pen.setStyle(
+            Qt.PenStyle.DashLine
+        )
+        preview.setPen(
+            pen
+        )
+
+        self._scene.addItem(
+            preview
+        )
+
+        self._manual_connection_preview = (
+            preview
+        )
+
+        self._update_manual_connection_preview(
+            scene_pos
+        )
+
+        self.setCursor(
+            Qt.CursorShape.CrossCursor
+        )
+
+    def _manual_connection_start(self) -> QPointF | None:
+        if self._manual_connection_source_point is not None:
+            return QPointF(
+                self._manual_connection_source_point
+            )
+
+        source_id = self._manual_connection_source_id
+        if source_id is None:
+            return None
+
+        card = self.nodes.get(
+            source_id
+        )
+
+        if not isinstance(
+            card,
+            NoteCard,
+        ):
+            return None
+
+        return card.connector_scene_pos()
+
+    def _update_manual_connection_preview(
+        self,
+        scene_pos: QPointF,
+    ) -> None:
+        preview = self._manual_connection_preview
+        start = self._manual_connection_start()
+
+        if preview is None or start is None:
+            return
+
+        dx = scene_pos.x() - start.x()
+        control = max(
+            70.0,
+            min(
+                abs(dx) * 0.42,
+                230.0,
+            ),
+        )
+
+        direction = (
+            1.0
+            if dx >= 0.0
+            else -1.0
+        )
+
+        control1 = QPointF(
+            start.x() + direction * control,
+            start.y(),
+        )
+
+        control2 = QPointF(
+            scene_pos.x() - direction * control,
+            scene_pos.y(),
+        )
+
+        path = QPainterPath(
+            start
+        )
+        path.cubicTo(
+            control1,
+            control2,
+            scene_pos,
+        )
+
+        preview.setPath(
+            path
+        )
+
+    def _finish_manual_connection(
+        self,
+        viewport_pos: QPoint,
+    ) -> None:
+        source_id = self._manual_connection_source_id
+
+        target_item = self.itemAt(
+            viewport_pos
+        )
+
+        while (
+            target_item is not None
+            and target_item.parentItem()
+            is not None
+        ):
+            target_item = target_item.parentItem()
+
+        target_id: str | None = None
+
+        # NoteCard herda PageCard, então notes também podem apontar
+        # para outras notes. GroupCard é propositalmente excluído:
+        # grupos da Investigation View não são persistentes.
+        if isinstance(
+            target_item,
+            PageCard,
+        ):
+            target_id = target_item.node.id
+
+        self._cancel_manual_connection()
+
+        if (
+            source_id is None
+            or target_id is None
+            or source_id == target_id
+        ):
+            return
+
+        self.manualConnectionRequested.emit(
+            source_id,
+            target_id,
+        )
+
+    def _cancel_manual_connection(self) -> None:
+        preview = self._manual_connection_preview
+
+        if (
+            preview is not None
+            and preview.scene()
+            is self._scene
+        ):
+            self._scene.removeItem(
+                preview
+            )
+
+        self._manual_connection_preview = None
+        self._manual_connection_source_id = None
+        self._manual_connection_source_point = None
+
+        if not self._panning:
+            self.unsetCursor()
+
+    # ------------------------------------------------------------------
     # Pan
     # ------------------------------------------------------------------
 
@@ -1007,6 +1245,42 @@ class SpiderCanvas(QGraphicsView):
         self,
         event,
     ) -> None:
+        if (
+            event.button()
+            == Qt.MouseButton.LeftButton
+        ):
+            viewport_pos = (
+                event.position().toPoint()
+            )
+            item = self.itemAt(
+                viewport_pos
+            )
+
+            while (
+                item is not None
+                and item.parentItem()
+                is not None
+            ):
+                item = item.parentItem()
+
+            if isinstance(
+                item,
+                NoteCard,
+            ):
+                scene_pos = self.mapToScene(
+                    viewport_pos
+                )
+
+                if item.connector_hit_test(
+                    scene_pos
+                ):
+                    self._begin_manual_connection(
+                        item,
+                        scene_pos,
+                    )
+                    event.accept()
+                    return
+
         if (
             event.button()
             == Qt.MouseButton.MiddleButton
@@ -1034,6 +1308,15 @@ class SpiderCanvas(QGraphicsView):
         self,
         event,
     ) -> None:
+        if self._manual_connection_source_id is not None:
+            self._update_manual_connection_preview(
+                self.mapToScene(
+                    event.position().toPoint()
+                )
+            )
+            event.accept()
+            return
+
         if self._panning:
             current = (
                 event.position().toPoint()
@@ -1069,6 +1352,18 @@ class SpiderCanvas(QGraphicsView):
         self,
         event,
     ) -> None:
+        if (
+            event.button()
+            == Qt.MouseButton.LeftButton
+            and self._manual_connection_source_id
+            is not None
+        ):
+            self._finish_manual_connection(
+                event.position().toPoint()
+            )
+            event.accept()
+            return
+
         if (
             event.button()
             == Qt.MouseButton.MiddleButton

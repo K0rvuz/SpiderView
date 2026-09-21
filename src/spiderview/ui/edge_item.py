@@ -183,7 +183,7 @@ class EdgeItem(QGraphicsPathItem):
             "manual_note"
         ):
             pen = QPen(
-                QColor("#D9A441"),
+                self._manual_note_color(),
                 2.2,
             )
             pen.setStyle(
@@ -235,6 +235,67 @@ class EdgeItem(QGraphicsPathItem):
             )
 
         return pen
+
+    def _manual_note_color(
+        self,
+    ) -> QColor:
+        metadata = (
+            self.transition.metadata
+            or {}
+        )
+
+        candidate = metadata.get(
+            "note_color"
+        )
+
+        if not candidate:
+            source_node = getattr(
+                self.source,
+                "node",
+                None,
+            )
+
+            source_metadata = getattr(
+                source_node,
+                "metadata",
+                {},
+            ) or {}
+
+            candidate = source_metadata.get(
+                "color"
+            )
+
+        color = QColor(
+            str(
+                candidate
+                or "#D9A441"
+            )
+        )
+
+        if not color.isValid():
+            color = QColor(
+                "#D9A441"
+            )
+
+        return color
+
+    def refresh_style(
+        self,
+    ) -> None:
+        self._pen = self._build_pen()
+
+        self.setPen(
+            self._pen
+        )
+
+        self._arrow.setBrush(
+            QBrush(
+                self._pen.color()
+            )
+        )
+
+        self._apply_view_style()
+        self.update_path()
 
     def _apply_view_style(
         self,

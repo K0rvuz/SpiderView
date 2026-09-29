@@ -7,6 +7,7 @@ from typing import Any
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontDatabase, QTextCursor
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -367,10 +368,10 @@ class BrowserConsolePanel(QWidget):
             ]
         )
         self.requests_table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
+            QAbstractItemView.SelectionBehavior.SelectRows
         )
         self.requests_table.setEditTriggers(
-            QTableWidget.EditTrigger.NoEditTriggers
+            QAbstractItemView.EditTrigger.NoEditTriggers
         )
 
         header = self.requests_table.horizontalHeader()

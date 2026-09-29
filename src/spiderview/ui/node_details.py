@@ -282,6 +282,38 @@ class NodeDetailsPanel(QWidget):
                 )
             )
 
+        request_header_names = (
+            metadata.get(
+                "last_request_header_names"
+            )
+        )
+
+        if request_header_names:
+            interesting.append(
+                (
+                    "Request headers",
+                    ", ".join(
+                        str(value)
+                        for value
+                        in request_header_names
+                    ),
+                )
+            )
+
+        request_body_length = (
+            metadata.get(
+                "last_request_body_length"
+            )
+        )
+
+        if request_body_length:
+            interesting.append(
+                (
+                    "Request body",
+                    f"{request_body_length} chars captured",
+                )
+            )
+
         mapping = (
             (
                 "Content-Type",

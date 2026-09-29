@@ -25,6 +25,8 @@ from PySide6.QtWebEngineWidgets import (
 
 
 EVENT_PREFIX = "__SPIDERVIEW_EVENT__:"
+CONSOLE_RESULT_PREFIX = "__SPIDERVIEW_CONSOLE_RESULT__:"
+API_LAB_RESULT_PREFIX = "__SPIDERVIEW_API_LAB_RESULT__:"
 
 
 INSTRUMENTATION_JS = r"""
@@ -353,6 +355,11 @@ INSTRUMENTATION_JS = r"""
             const sourceUrl =
                 window.location.href;
 
+            const requestOrigin = String(
+                init?.__spiderview_origin
+                || "page"
+            );
+
             let requestUrl = "";
             let method = "GET";
 
@@ -422,6 +429,9 @@ INSTRUMENTATION_JS = r"""
                     source_url:
                         sourceUrl,
 
+                    request_origin:
+                        requestOrigin,
+
                     request_url:
                         requestUrl,
 
@@ -463,6 +473,9 @@ INSTRUMENTATION_JS = r"""
 
                     source_url:
                         sourceUrl,
+
+                    request_origin:
+                        requestOrigin,
 
                     request_url:
                         requestUrl,
@@ -699,6 +712,9 @@ class SpiderWebPage(QWebEnginePage):
     "Failed to parse video contentType:",
     )
     browserEvent = Signal(object)
+    consoleResult = Signal(object)
+    apiLabResult = Signal(object)
+    consoleMessageDetected = Signal(object)
 
     def javaScriptConsoleMessage(
         self,
@@ -742,6 +758,46 @@ class SpiderWebPage(QWebEnginePage):
             return
 
         # --------------------------------------------------------------
+        # Browser Console / API Lab results
+        # --------------------------------------------------------------
+
+        for prefix, signal in (
+            (
+                CONSOLE_RESULT_PREFIX,
+                self.consoleResult,
+            ),
+            (
+                API_LAB_RESULT_PREFIX,
+                self.apiLabResult,
+            ),
+        ):
+            if not message.startswith(
+                prefix
+            ):
+                continue
+
+            raw = message[
+                len(prefix):
+            ]
+
+            try:
+                payload = json.loads(
+                    raw
+                )
+            except json.JSONDecodeError:
+                return
+
+            if isinstance(
+                payload,
+                dict,
+            ):
+                signal.emit(
+                    payload
+                )
+
+            return
+
+        # --------------------------------------------------------------
         # Ruído conhecido do Chromium / páginas
         # --------------------------------------------------------------
 
@@ -763,6 +819,21 @@ class SpiderWebPage(QWebEnginePage):
         # --------------------------------------------------------------
         # Console normal
         # --------------------------------------------------------------
+
+        level_name = getattr(
+            level,
+            "name",
+            str(level),
+        )
+
+        self.consoleMessageDetected.emit(
+            {
+                "level": level_name,
+                "message": message,
+                "line_number": line_number,
+                "source_id": source_id,
+            }
+        )
 
         super().javaScriptConsoleMessage(
             level,
@@ -801,6 +872,20 @@ class BrowserHost(QWidget):
         object
     )
 
+    # Browser Console
+    javascriptResult = Signal(
+        object
+    )
+
+    consoleMessageDetected = Signal(
+        object
+    )
+
+    # API Lab
+    apiLabResult = Signal(
+        object
+    )
+
     def __init__(
         self,
         parent=None,
@@ -829,6 +914,9 @@ class BrowserHost(QWidget):
         # --------------------------------------------------------------
 
         self._navigation_origin = "page"
+
+        self._console_request_counter = 0
+        self._api_lab_request_counter = 0
 
         # --------------------------------------------------------------
         # Buttons
@@ -1016,6 +1104,18 @@ class BrowserHost(QWidget):
             self._on_browser_event
         )
 
+        self.page.consoleResult.connect(
+            self.javascriptResult.emit
+        )
+
+        self.page.consoleMessageDetected.connect(
+            self.consoleMessageDetected.emit
+        )
+
+        self.page.apiLabResult.connect(
+            self.apiLabResult.emit
+        )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -1065,6 +1165,305 @@ class BrowserHost(QWidget):
         self.address_bar.setFocus()
 
         self.address_bar.selectAll()
+
+    def execute_javascript(
+        self,
+        code: str,
+    ) -> int | None:
+        """
+        Execute JavaScript in MainWorld and asynchronously return even
+        Promise results through javascriptResult.
+        """
+
+        code = code.strip()
+
+        if not code:
+            return None
+
+        self._console_request_counter += 1
+
+        request_id = (
+            self._console_request_counter
+        )
+
+        source_json = json.dumps(
+            code
+        )
+
+        prefix_json = json.dumps(
+            CONSOLE_RESULT_PREFIX
+        )
+
+        script = r"""
+(async () => {
+    const requestId = %s;
+    const prefix = %s;
+    const source = %s;
+
+    function serialize(value) {
+        if (value === undefined) {
+            return {
+                type: "undefined",
+                value: "undefined",
+            };
+        }
+
+        if (value === null) {
+            return {
+                type: "null",
+                value: "null",
+            };
+        }
+
+        if (
+            typeof Response !== "undefined"
+            && value instanceof Response
+        ) {
+            return {
+                type: "json",
+                value: {
+                    type: "Response",
+                    url: value.url,
+                    status: value.status,
+                    statusText: value.statusText,
+                    ok: value.ok,
+                    redirected: value.redirected,
+                },
+            };
+        }
+
+        if (value instanceof Error) {
+            return {
+                type: "json",
+                value: {
+                    name: value.name,
+                    message: value.message,
+                    stack: value.stack || "",
+                },
+            };
+        }
+
+        const type = typeof value;
+
+        if (
+            type === "string"
+            || type === "number"
+            || type === "boolean"
+        ) {
+            return {
+                type: type,
+                value: value,
+            };
+        }
+
+        if (type === "bigint") {
+            return {
+                type: "bigint",
+                value: value.toString() + "n",
+            };
+        }
+
+        if (
+            type === "function"
+            || type === "symbol"
+        ) {
+            return {
+                type: type,
+                value: String(value),
+            };
+        }
+
+        try {
+            return {
+                type: "json",
+                value: JSON.parse(
+                    JSON.stringify(value)
+                ),
+            };
+        } catch (error) {
+            return {
+                type: type,
+                value: String(value),
+            };
+        }
+    }
+
+    try {
+        const result = await eval(source);
+
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: requestId,
+                ok: true,
+                result: serialize(result),
+            })
+        );
+    } catch (error) {
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: requestId,
+                ok: false,
+                error: String(
+                    error?.stack
+                    || error?.message
+                    || error
+                ),
+            })
+        );
+    }
+})();
+""" % (
+            request_id,
+            prefix_json,
+            source_json,
+        )
+
+        self.page.runJavaScript(
+            script
+        )
+
+        return request_id
+
+    def execute_api_request(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str] | None = None,
+        body: str = "",
+    ) -> int | None:
+        """
+        Send a fetch from the loaded page context.
+
+        The instrumentation wrapper sees the same fetch and emits the
+        regular apiRequestDetected event, so API Lab traffic follows the
+        normal SpiderView request -> graph pipeline.
+        """
+
+        method = (
+            method.strip().upper()
+            or "GET"
+        )
+
+        url = url.strip()
+
+        if not url:
+            return None
+
+        self._api_lab_request_counter += 1
+
+        request_id = (
+            self._api_lab_request_counter
+        )
+
+        request_json = json.dumps(
+            {
+                "id": request_id,
+                "method": method,
+                "url": url,
+                "headers": headers or {},
+                "body": body,
+            },
+            ensure_ascii=False,
+        )
+
+        prefix_json = json.dumps(
+            API_LAB_RESULT_PREFIX
+        )
+
+        script = r"""
+(async () => {
+    const request = %s;
+    const prefix = %s;
+    const startedAt = performance.now();
+
+    try {
+        const init = {
+            method: request.method,
+            headers: request.headers || {},
+            credentials: "include",
+            __spiderview_origin: "api_lab",
+        };
+
+        if (
+            request.body
+            && request.method !== "GET"
+            && request.method !== "HEAD"
+        ) {
+            init.body = request.body;
+        }
+
+        const response = await fetch(
+            request.url,
+            init
+        );
+
+        const body = await response.text();
+
+        const headers = {};
+
+        response.headers.forEach(
+            (value, name) => {
+                headers[name] = value;
+            }
+        );
+
+        const durationMs = (
+            performance.now()
+            - startedAt
+        );
+
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: request.id,
+                ok: true,
+                url: response.url,
+                status: response.status,
+                status_text: response.statusText,
+                redirected: response.redirected,
+                headers: headers,
+                body: body.slice(0, 2000000),
+                truncated: body.length > 2000000,
+                duration_ms: Math.round(
+                    durationMs * 100
+                ) / 100,
+            })
+        );
+    } catch (error) {
+        const durationMs = (
+            performance.now()
+            - startedAt
+        );
+
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: request.id,
+                ok: false,
+                error: String(
+                    error?.stack
+                    || error?.message
+                    || error
+                ),
+                duration_ms: Math.round(
+                    durationMs * 100
+                ) / 100,
+            })
+        );
+    }
+})();
+""" % (
+            request_json,
+            prefix_json,
+        )
+
+        self.page.runJavaScript(
+            script
+        )
+
+        return request_id
 
     def capture_preview(
         self,

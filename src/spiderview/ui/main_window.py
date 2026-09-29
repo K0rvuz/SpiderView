@@ -2342,6 +2342,11 @@ class MainWindow(QMainWindow):
         self._current_node_id = target_id
         self._select_node(target_id)
 
+        self._update_page_security_observations(
+            target_id,
+            url,
+        )
+
         self._schedule_preview(
             target_id,
             normalized_url,

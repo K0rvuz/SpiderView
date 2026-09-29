@@ -349,6 +349,227 @@ class NodeDetailsPanel(QWidget):
                 interesting,
             )
 
+        security = metadata.get(
+            "security_observations"
+        )
+
+        if isinstance(
+            security,
+            dict,
+        ):
+            security_rows = [
+                (
+                    "Scope",
+                    "passive observation",
+                ),
+            ]
+
+            boolean_mapping = (
+                (
+                    "HTTPS",
+                    "https",
+                ),
+                (
+                    "Cross-origin",
+                    "cross_origin",
+                ),
+                (
+                    "CORS header",
+                    "cors_header_observed",
+                ),
+                (
+                    "CSP",
+                    "csp",
+                ),
+                (
+                    "HSTS",
+                    "hsts",
+                ),
+                (
+                    "X-Frame-Options",
+                    "x_frame_options",
+                ),
+                (
+                    "X-Content-Type-Options",
+                    "x_content_type_options",
+                ),
+                (
+                    "Referrer-Policy",
+                    "referrer_policy",
+                ),
+                (
+                    "Permissions-Policy",
+                    "permissions_policy",
+                ),
+            )
+
+            for label, key in boolean_mapping:
+                if key not in security:
+                    continue
+
+                security_rows.append(
+                    (
+                        label,
+                        (
+                            "True"
+                            if bool(
+                                security.get(
+                                    key
+                                )
+                            )
+                            else "False"
+                        ),
+                    )
+                )
+
+            for label, key in (
+                (
+                    "Access-Control-Allow-Origin",
+                    "access_control_allow_origin",
+                ),
+                (
+                    "Access-Control-Allow-Credentials",
+                    "access_control_allow_credentials",
+                ),
+            ):
+                value = security.get(
+                    key
+                )
+
+                if value:
+                    security_rows.append(
+                        (
+                            label,
+                            value,
+                        )
+                    )
+
+            cookies = security.get(
+                "cookies"
+            )
+
+            if isinstance(
+                cookies,
+                dict,
+            ):
+                cookie_count = int(
+                    cookies.get(
+                        "count",
+                        0,
+                    )
+                    or 0
+                )
+
+                security_rows.append(
+                    (
+                        "Cookies observed",
+                        cookie_count,
+                    )
+                )
+
+                if cookie_count:
+                    http_true = int(
+                        cookies.get(
+                            "http_only_true",
+                            0,
+                        )
+                        or 0
+                    )
+
+                    http_false = int(
+                        cookies.get(
+                            "http_only_false",
+                            0,
+                        )
+                        or 0
+                    )
+
+                    secure_true = int(
+                        cookies.get(
+                            "secure_true",
+                            0,
+                        )
+                        or 0
+                    )
+
+                    secure_false = int(
+                        cookies.get(
+                            "secure_false",
+                            0,
+                        )
+                        or 0
+                    )
+
+                    if http_true == cookie_count:
+                        http_only_label = "True"
+                    elif http_false == cookie_count:
+                        http_only_label = "False"
+                    else:
+                        http_only_label = (
+                            "Mixed · "
+                            f"{http_true} true / "
+                            f"{http_false} false"
+                        )
+
+                    if secure_true == cookie_count:
+                        secure_label = "True"
+                    elif secure_false == cookie_count:
+                        secure_label = "False"
+                    else:
+                        secure_label = (
+                            "Mixed · "
+                            f"{secure_true} true / "
+                            f"{secure_false} false"
+                        )
+
+                    security_rows.extend(
+                        [
+                            (
+                                "HttpOnly",
+                                http_only_label,
+                            ),
+                            (
+                                "Secure cookie",
+                                secure_label,
+                            ),
+                        ]
+                    )
+
+                    same_site = cookies.get(
+                        "same_site"
+                    )
+
+                    if same_site:
+                        security_rows.append(
+                            (
+                                "SameSite",
+                                self._format_mapping(
+                                    same_site
+                                ),
+                            )
+                        )
+
+                    names = cookies.get(
+                        "names"
+                    )
+
+                    if names:
+                        security_rows.append(
+                            (
+                                "Cookie names",
+                                ", ".join(
+                                    str(name)
+                                    for name
+                                    in names
+                                ),
+                            )
+                        )
+
+            self._add_section(
+                "Security observations",
+                security_rows,
+            )
+
         if metrics is not None:
             graph_rows = [
                 (

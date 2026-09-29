@@ -39,11 +39,39 @@ def redact_request_headers(
         value
     )
 
+    def is_sensitive(
+        name: str,
+    ) -> bool:
+        lowered = (
+            name
+            .strip()
+            .lower()
+        )
+
+        return (
+            lowered
+            in SENSITIVE_REQUEST_HEADERS
+            or any(
+                marker
+                in lowered
+                for marker
+                in (
+                    "authorization",
+                    "cookie",
+                    "token",
+                    "secret",
+                    "api-key",
+                    "apikey",
+                )
+            )
+        )
+
     return {
         name: (
             "[redacted]"
-            if name
-            in SENSITIVE_REQUEST_HEADERS
+            if is_sensitive(
+                name
+            )
             else header_value
         )
         for name, header_value

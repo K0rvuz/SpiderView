@@ -354,6 +354,15 @@ class BrowserConsolePanel(QWidget):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(8, 8, 8, 8)
 
+        hint = QLabel(
+            "Selecione para inspecionar. "
+            "Duplo clique ou 'Repetir no API Lab' carrega método, URL, "
+            "headers e body capturados. Credenciais ficam apenas em memória."
+        )
+        hint.setWordWrap(
+            True
+        )
+
         self.requests_table = QTableWidget(
             0,
             6,
@@ -370,6 +379,9 @@ class BrowserConsolePanel(QWidget):
         )
         self.requests_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.requests_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
         )
         self.requests_table.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
@@ -388,21 +400,84 @@ class BrowserConsolePanel(QWidget):
             QHeaderView.ResizeMode.Stretch,
         )
 
+        self.request_inspector = QPlainTextEdit()
+        self.request_inspector.setReadOnly(
+            True
+        )
+        self.request_inspector.setPlaceholderText(
+            "Selecione uma request para ver headers, body e response headers."
+        )
+
+        splitter = QSplitter(
+            Qt.Orientation.Vertical
+        )
+        splitter.addWidget(
+            self.requests_table
+        )
+        splitter.addWidget(
+            self.request_inspector
+        )
+        splitter.setStretchFactor(
+            0,
+            2
+        )
+        splitter.setStretchFactor(
+            1,
+            1
+        )
+
+        self.replay_request_button = QPushButton(
+            "Repetir no API Lab"
+        )
+        self.replay_request_button.setEnabled(
+            False
+        )
+
         self.clear_requests_button = QPushButton(
             "Limpar requests"
-        )
-        self.clear_requests_button.clicked.connect(
-            lambda: self.requests_table.setRowCount(0)
         )
 
         row = QHBoxLayout()
         row.addStretch(1)
-        row.addWidget(self.clear_requests_button)
+        row.addWidget(
+            self.replay_request_button
+        )
+        row.addWidget(
+            self.clear_requests_button
+        )
 
-        layout.addWidget(self.requests_table, 1)
-        layout.addLayout(row)
+        layout.addWidget(
+            hint
+        )
+        layout.addWidget(
+            splitter,
+            1,
+        )
+        layout.addLayout(
+            row
+        )
 
-        self.tabs.addTab(tab, "Requests")
+        self.tabs.addTab(
+            tab,
+            "Requests",
+        )
+
+        self.requests_table.itemSelectionChanged.connect(
+            self._show_selected_request
+        )
+
+        self.requests_table.cellDoubleClicked.connect(
+            lambda _row, _column:
+                self._replay_selected_request()
+        )
+
+        self.replay_request_button.clicked.connect(
+            self._replay_selected_request
+        )
+
+        self.clear_requests_button.clicked.connect(
+            self._clear_requests
+        )
 
     def _build_history_tab(self) -> None:
         tab = QWidget()
@@ -556,10 +631,28 @@ class BrowserConsolePanel(QWidget):
         self.tabs.setCurrentIndex(1)
         self.api_url.setFocus()
 
+    @staticmethod
+    def _headers_editor_text(
+        headers,
+    ) -> str:
+        if not isinstance(
+            headers,
+            dict,
+        ):
+            return ""
+
+        return "\n".join(
+            f"{name}: {value}"
+            for name, value
+            in headers.items()
+        )
+
     def prefill_request(
         self,
         method: str,
         url: str,
+        headers: dict | None = None,
+        body: str = "",
     ) -> None:
         method = (
             method.strip().upper()
@@ -577,6 +670,17 @@ class BrowserConsolePanel(QWidget):
 
         self.api_url.setText(
             url
+        )
+
+        if headers is not None:
+            self.api_headers.setPlainText(
+                self._headers_editor_text(
+                    headers
+                )
+            )
+
+        self.api_body.setPlainText(
+            body or ""
         )
 
         self.select_api_lab()
@@ -753,6 +857,243 @@ class BrowserConsolePanel(QWidget):
     # Captured requests
     # ------------------------------------------------------------------
 
+    def _clear_requests(
+        self,
+    ) -> None:
+        self.requests_table.setRowCount(
+            0
+        )
+        self.request_inspector.clear()
+        self.replay_request_button.setEnabled(
+            False
+        )
+
+    def _selected_request_event(
+        self,
+    ) -> dict | None:
+        row = (
+            self.requests_table
+            .currentRow()
+        )
+
+        if row < 0:
+            return None
+
+        item = (
+            self.requests_table
+            .item(
+                row,
+                0,
+            )
+        )
+
+        if item is None:
+            return None
+
+        raw = item.data(
+            Qt.ItemDataRole.UserRole
+        )
+
+        if not raw:
+            return None
+
+        try:
+            event = json.loads(
+                str(raw)
+            )
+        except (
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            return None
+
+        if not isinstance(
+            event,
+            dict,
+        ):
+            return None
+
+        return event
+
+    def _show_selected_request(
+        self,
+    ) -> None:
+        event = (
+            self._selected_request_event()
+        )
+
+        if event is None:
+            self.request_inspector.clear()
+            self.replay_request_button.setEnabled(
+                False
+            )
+            return
+
+        self.replay_request_button.setEnabled(
+            True
+        )
+
+        request_headers = event.get(
+            "request_headers",
+            {},
+        )
+
+        response_headers = event.get(
+            "response_headers",
+            {},
+        )
+
+        request_body = str(
+            event.get(
+                "request_body",
+                "",
+            )
+            or ""
+        )
+
+        method = str(
+            event.get(
+                "method",
+                "GET",
+            )
+            or "GET"
+        ).upper()
+
+        url = str(
+            event.get(
+                "request_url",
+                "",
+            )
+            or event.get(
+                "url",
+                "",
+            )
+            or ""
+        )
+
+        status = event.get(
+            "status"
+        )
+
+        lines = [
+            f"{method} {url}",
+            "",
+            "Request headers:",
+            (
+                self._headers_editor_text(
+                    request_headers
+                )
+                or "(none captured)"
+            ),
+            "",
+            "Request body:",
+            request_body
+            or "(empty / not captured)",
+            "",
+            "Response:",
+            (
+                str(status)
+                if status not in (
+                    None,
+                    "",
+                )
+                else "—"
+            ),
+            "",
+            "Response headers:",
+            (
+                self._headers_editor_text(
+                    response_headers
+                )
+                or "(none exposed)"
+            ),
+        ]
+
+        error = str(
+            event.get(
+                "error",
+                "",
+            )
+            or ""
+        )
+
+        if error:
+            lines.extend(
+                [
+                    "",
+                    "Error:",
+                    error,
+                ]
+            )
+
+        self.request_inspector.setPlainText(
+            "\n".join(
+                lines
+            )
+        )
+
+    def _replay_selected_request(
+        self,
+    ) -> None:
+        event = (
+            self._selected_request_event()
+        )
+
+        if event is None:
+            return
+
+        method = str(
+            event.get(
+                "method",
+                "GET",
+            )
+            or "GET"
+        ).upper()
+
+        url = str(
+            event.get(
+                "request_url",
+                "",
+            )
+            or event.get(
+                "url",
+                "",
+            )
+            or ""
+        )
+
+        headers = event.get(
+            "request_headers",
+            {},
+        )
+
+        if not isinstance(
+            headers,
+            dict,
+        ):
+            headers = {}
+
+        body = str(
+            event.get(
+                "request_body",
+                "",
+            )
+            or ""
+        )
+
+        self.prefill_request(
+            method,
+            url,
+            headers=headers,
+            body=body,
+        )
+
+        self._record_history(
+            "replay",
+            f"{method} {url}",
+        )
+
     def record_request(
         self,
         event: dict,
@@ -837,7 +1178,9 @@ class BrowserConsolePanel(QWidget):
             or ""
         )
 
-        self.requests_table.insertRow(0)
+        self.requests_table.insertRow(
+            0
+        )
 
         values = [
             method,
@@ -848,13 +1191,29 @@ class BrowserConsolePanel(QWidget):
             url,
         ]
 
+        event_json = json.dumps(
+            event,
+            ensure_ascii=False,
+            default=str,
+        )
+
         for column, value in enumerate(
             values
         ):
+            item = QTableWidgetItem(
+                value
+            )
+
+            if column == 0:
+                item.setData(
+                    Qt.ItemDataRole.UserRole,
+                    event_json,
+                )
+
             self.requests_table.setItem(
                 0,
                 column,
-                QTableWidgetItem(value),
+                item,
             )
 
         while (

@@ -32,44 +32,45 @@ def normalize_headers(
     }
 
 
-def redact_request_headers(
+def _is_sensitive_header_name(
+    name: str,
+) -> bool:
+    lowered = (
+        name
+        .strip()
+        .lower()
+    )
+
+    return (
+        lowered
+        in SENSITIVE_REQUEST_HEADERS
+        or any(
+            marker
+            in lowered
+            for marker
+            in (
+                "authorization",
+                "cookie",
+                "token",
+                "secret",
+                "api-key",
+                "apikey",
+            )
+        )
+    )
+
+
+def redact_headers(
     value: Any,
 ) -> dict[str, str]:
     headers = normalize_headers(
         value
     )
 
-    def is_sensitive(
-        name: str,
-    ) -> bool:
-        lowered = (
-            name
-            .strip()
-            .lower()
-        )
-
-        return (
-            lowered
-            in SENSITIVE_REQUEST_HEADERS
-            or any(
-                marker
-                in lowered
-                for marker
-                in (
-                    "authorization",
-                    "cookie",
-                    "token",
-                    "secret",
-                    "api-key",
-                    "apikey",
-                )
-            )
-        )
-
     return {
         name: (
             "[redacted]"
-            if is_sensitive(
+            if _is_sensitive_header_name(
                 name
             )
             else header_value
@@ -77,6 +78,15 @@ def redact_request_headers(
         for name, header_value
         in headers.items()
     }
+
+
+def redact_request_headers(
+    value: Any,
+) -> dict[str, str]:
+    # Backwards-compatible semantic alias.
+    return redact_headers(
+        value
+    )
 
 
 def redact_event_for_persistence(
@@ -100,7 +110,7 @@ def redact_event_for_persistence(
     if request_headers:
         safe[
             "request_headers"
-        ] = redact_request_headers(
+        ] = redact_headers(
             request_headers
         )
 
@@ -108,6 +118,19 @@ def redact_event_for_persistence(
             "request_header_names"
         ] = sorted(
             request_headers
+        )
+
+    response_headers = normalize_headers(
+        safe.get(
+            "response_headers"
+        )
+    )
+
+    if response_headers:
+        safe[
+            "response_headers"
+        ] = redact_headers(
+            response_headers
         )
 
     request_body = str(

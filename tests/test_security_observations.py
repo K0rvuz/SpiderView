@@ -12,10 +12,16 @@ class SecurityObservationsTests(unittest.TestCase):
             "source_url": "https://app.example.test/page",
             "request_url": "https://api.example.test/users",
             "url": "https://api.example.test/users",
+            "request_headers": {
+                "Authorization": "Bearer runtime-only",
+                "X-CSRF-Token": "csrf-value",
+            },
             "response_headers": {
                 "Access-Control-Allow-Origin": "https://app.example.test",
                 "Strict-Transport-Security": "max-age=31536000",
                 "X-Content-Type-Options": "nosniff",
+                "Server": "example-edge",
+                "X-Powered-By": "Example",
             },
         }
 
@@ -56,6 +62,20 @@ class SecurityObservationsTests(unittest.TestCase):
         self.assertTrue(
             observations["x_content_type_options"]
         )
+        self.assertTrue(
+            observations["authorization_header_observed"]
+        )
+        self.assertTrue(
+            observations["csrf_header_observed"]
+        )
+        self.assertEqual(
+            observations["server"],
+            "example-edge",
+        )
+        self.assertEqual(
+            observations["x_powered_by"],
+            "Example",
+        )
         self.assertFalse(
             observations["csp"]
         )
@@ -70,6 +90,7 @@ class SecurityObservationsTests(unittest.TestCase):
             "request_headers": {
                 "Authorization": "Bearer secret",
                 "X-API-Key": "abc123",
+                "X-Custom-Session-Token": "token-secret",
                 "Content-Type": "application/json",
             },
             "request_body": '{"password":"secret"}',
@@ -88,6 +109,10 @@ class SecurityObservationsTests(unittest.TestCase):
         )
         self.assertEqual(
             safe["request_headers"]["x-api-key"],
+            "[redacted]",
+        )
+        self.assertEqual(
+            safe["request_headers"]["x-custom-session-token"],
             "[redacted]",
         )
         self.assertEqual(

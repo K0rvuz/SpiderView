@@ -672,7 +672,9 @@ class BrowserConsolePanel(QWidget):
             url
         )
 
-        if headers is not None:
+        if headers is None:
+            self.api_headers.clear()
+        else:
             self.api_headers.setPlainText(
                 self._headers_editor_text(
                     headers

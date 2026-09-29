@@ -401,6 +401,14 @@ class NodeDetailsPanel(QWidget):
                     "Permissions-Policy",
                     "permissions_policy",
                 ),
+                (
+                    "Authorization header",
+                    "authorization_header_observed",
+                ),
+                (
+                    "CSRF/XSRF header",
+                    "csrf_header_observed",
+                ),
             )
 
             for label, key in boolean_mapping:
@@ -430,6 +438,38 @@ class NodeDetailsPanel(QWidget):
                 (
                     "Access-Control-Allow-Credentials",
                     "access_control_allow_credentials",
+                ),
+                (
+                    "Server",
+                    "server",
+                ),
+                (
+                    "X-Powered-By",
+                    "x_powered_by",
+                ),
+                (
+                    "CSP value",
+                    "content_security_policy_value",
+                ),
+                (
+                    "HSTS value",
+                    "strict_transport_security_value",
+                ),
+                (
+                    "X-Frame-Options value",
+                    "x_frame_options_value",
+                ),
+                (
+                    "X-Content-Type-Options value",
+                    "x_content_type_options_value",
+                ),
+                (
+                    "Referrer-Policy value",
+                    "referrer_policy_value",
+                ),
+                (
+                    "Permissions-Policy value",
+                    "permissions_policy_value",
                 ),
             ):
                 value = security.get(

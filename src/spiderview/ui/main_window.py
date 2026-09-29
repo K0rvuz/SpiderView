@@ -30,6 +30,7 @@ from ..graph import (
 from ..models import NodeKind, PageNode, Transition, TransitionType
 from ..persistence.project_store import ProjectStore, ProjectStoreError
 from .analysis_toolbar import AnalysisToolbar
+from .browser_console import BrowserConsolePanel
 from .canvas import SpiderCanvas
 from .edge_item import EdgeItem
 from .group_card import GroupCard
@@ -186,6 +187,41 @@ class MainWindow(QMainWindow):
         )
 
         self.browser_dock.hide()
+
+        # --------------------------------------------------------------
+        # Browser Console / API Lab
+        # --------------------------------------------------------------
+
+        self.browser_console = BrowserConsolePanel(
+            self.browser_host,
+            self,
+        )
+
+        self.browser_console_dock = QDockWidget(
+            "Console / API Lab",
+            self,
+        )
+
+        self.browser_console_dock.setWidget(
+            self.browser_console
+        )
+
+        self.browser_console_dock.setMinimumHeight(
+            220
+        )
+
+        self.browser_console_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+
+        self.addDockWidget(
+            Qt.DockWidgetArea.BottomDockWidgetArea,
+            self.browser_console_dock,
+        )
+
+        self.browser_console_dock.hide()
 
         # --------------------------------------------------------------
         # Details
@@ -436,6 +472,20 @@ class MainWindow(QMainWindow):
         )
         view_menu.addAction(
             browser_action
+        )
+
+        console_action = QAction(
+            "Console / API Lab",
+            self,
+        )
+        console_action.setShortcut(
+            QKeySequence("Ctrl+Shift+J")
+        )
+        console_action.triggered.connect(
+            self._show_browser_console
+        )
+        view_menu.addAction(
+            console_action
         )
 
         details_action = QAction(
@@ -1462,6 +1512,7 @@ class MainWindow(QMainWindow):
     def _configure_status_bar(self) -> None:
         self.statusBar().showMessage(
             "Ctrl+L  Browser     •     "
+            "Ctrl+Shift+J  Console/API Lab     •     "
             "Ctrl+D  Details     •     "
             "Ctrl+I  Investigation     •     "
             "Focus/Filters na barra Analysis     •     "
@@ -1643,6 +1694,11 @@ class MainWindow(QMainWindow):
         self.browser_dock.raise_()
         self.browser_host.focus_address_bar()
 
+    def _show_browser_console(self) -> None:
+        self.browser_console_dock.show()
+        self.browser_console_dock.raise_()
+        self.browser_console.focus_console()
+
     def _open_node(
         self,
         node_id: str,
@@ -1659,8 +1715,15 @@ class MainWindow(QMainWindow):
             return
 
         if card.node.kind == NodeKind.API:
+            self.browser_console.prefill_request(
+                card.node.method,
+                card.node.url,
+            )
+            self.browser_console_dock.show()
+            self.browser_console_dock.raise_()
+
             self.statusBar().showMessage(
-                "API "
+                "API Lab: "
                 f"{card.node.method.upper()} "
                 f"{card.node.url}",
                 5000,
@@ -2512,6 +2575,14 @@ class MainWindow(QMainWindow):
             or "request"
         ).lower()
 
+        request_origin = str(
+            event.get(
+                "request_origin",
+                "page",
+            )
+            or "page"
+        ).lower()
+
         existing_id = (
             self._api_index.get(
                 key
@@ -2556,6 +2627,19 @@ class MainWindow(QMainWindow):
                         transport
                     )
 
+                request_origins = list(
+                    node.metadata.get(
+                        "request_origins",
+                        [],
+                    )
+                    or []
+                )
+
+                if request_origin not in request_origins:
+                    request_origins.append(
+                        request_origin
+                    )
+
                 node.metadata.update(
                     {
                         "request_count":
@@ -2563,6 +2647,12 @@ class MainWindow(QMainWindow):
 
                         "transports":
                             transports,
+
+                        "request_origins":
+                            request_origins,
+
+                        "last_request_origin":
+                            request_origin,
 
                         "last_transport":
                             transport,
@@ -2634,6 +2724,11 @@ class MainWindow(QMainWindow):
                 "transports": [
                     transport
                 ],
+                "request_origins": [
+                    request_origin
+                ],
+                "last_request_origin":
+                    request_origin,
                 "last_transport":
                     transport,
                 "last_status":
@@ -2763,6 +2858,17 @@ class MainWindow(QMainWindow):
                 TransitionType.REQUEST
             )
             transport_label = "request"
+
+        request_origin = str(
+            event.get(
+                "request_origin",
+                "page",
+            )
+            or "page"
+        ).lower()
+
+        if request_origin == "api_lab":
+            transport_label = "API Lab"
 
         method = str(
             event.get(
@@ -4440,6 +4546,59 @@ class MainWindow(QMainWindow):
 
             QLineEdit:focus {
                 border: 1px solid #4C9AFF;
+            }
+
+            QPlainTextEdit,
+            QTableWidget,
+            QComboBox {
+                background: #111419;
+                color: #D8DEE9;
+                border: 1px solid #343B46;
+                border-radius: 5px;
+                selection-background-color: #315A86;
+            }
+
+            QHeaderView::section {
+                background: #1B1F26;
+                color: #BFC7D5;
+                border: none;
+                border-right: 1px solid #343B46;
+                border-bottom: 1px solid #343B46;
+                padding: 5px;
+            }
+
+            QTabWidget::pane {
+                border: 1px solid #2C323B;
+                background: #171B21;
+            }
+
+            QTabBar::tab {
+                background: #1B1F26;
+                color: #AEB7C5;
+                padding: 7px 12px;
+                border: 1px solid #2C323B;
+                border-bottom: none;
+            }
+
+            QTabBar::tab:selected {
+                background: #252C35;
+                color: #FFFFFF;
+            }
+
+            QPushButton {
+                background: #252C35;
+                color: #D8DEE9;
+                border: 1px solid #3A424E;
+                border-radius: 5px;
+                padding: 6px 12px;
+            }
+
+            QPushButton:hover {
+                background: #303946;
+            }
+
+            QLabel {
+                color: #BFC7D5;
             }
             """
         )

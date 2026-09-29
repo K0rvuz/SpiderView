@@ -1288,8 +1288,51 @@ class BrowserHost(QWidget):
         }
     }
 
+    async function executeSource() {
+        try {
+            return await eval(source);
+        } catch (error) {
+            const topLevelAwait = (
+                error instanceof SyntaxError
+                && /\\bawait\\b/.test(source)
+            );
+
+            if (!topLevelAwait) {
+                throw error;
+            }
+
+            const AsyncFunction = (
+                Object.getPrototypeOf(
+                    async function() {}
+                ).constructor
+            );
+
+            try {
+                const expressionRunner = (
+                    new AsyncFunction(
+                        "return await (" + source + ");"
+                    )
+                );
+
+                return await expressionRunner.call(
+                    window
+                );
+            } catch (expressionError) {
+                const statementRunner = (
+                    new AsyncFunction(
+                        source
+                    )
+                );
+
+                return await statementRunner.call(
+                    window
+                );
+            }
+        }
+    }
+
     try {
-        const result = await eval(source);
+        const result = await executeSource();
 
         console.log(
             prefix

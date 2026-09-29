@@ -1559,6 +1559,11 @@ class BrowserHost(QWidget):
             or "/"
         )
 
+        scheme = (
+            qurl.scheme()
+            .lower()
+        )
+
         if not host:
             return {}
 
@@ -1575,13 +1580,23 @@ class BrowserHost(QWidget):
                 "."
             )
 
+            if not domain:
+                continue
+
             if (
-                domain
-                and host != domain
+                host != domain
                 and not host.endswith(
                     "."
                     + domain
                 )
+            ):
+                continue
+
+            if (
+                cookie.get(
+                    "secure"
+                )
+                and scheme != "https"
             ):
                 continue
 

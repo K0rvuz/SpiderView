@@ -29,6 +29,11 @@ from ..graph import (
 )
 from ..models import NodeKind, PageNode, Transition, TransitionType
 from ..persistence.project_store import ProjectStore, ProjectStoreError
+from ..security_observations import (
+    build_security_observations,
+    normalize_headers,
+    redact_event_for_persistence,
+)
 from .analysis_toolbar import AnalysisToolbar
 from .browser_console import BrowserConsolePanel
 from .canvas import SpiderCanvas
@@ -1974,6 +1979,61 @@ class MainWindow(QMainWindow):
     # Browser -> Graph
     # ------------------------------------------------------------------
 
+    def _update_page_security_observations(
+        self,
+        node_id: str,
+        url: str,
+    ) -> None:
+        card = self.canvas.get_node(
+            node_id
+        )
+
+        if card is None:
+            return
+
+        try:
+            scheme = (
+                urlsplit(
+                    url
+                )
+                .scheme
+                .lower()
+            )
+        except ValueError:
+            scheme = ""
+
+        observations = dict(
+            card.node.metadata.get(
+                "security_observations",
+                {},
+            )
+            or {}
+        )
+
+        observations[
+            "https"
+        ] = (
+            scheme == "https"
+        )
+
+        cookie_summary = (
+            self.browser_host
+            .cookie_security_for_url(
+                url
+            )
+        )
+
+        if cookie_summary:
+            observations[
+                "cookies"
+            ] = cookie_summary
+
+        card.node.metadata[
+            "security_observations"
+        ] = observations
+
+        card.update()
+
     def _get_or_create_browser_node(
         self,
         url: str,
@@ -2121,6 +2181,11 @@ class MainWindow(QMainWindow):
             self._current_node_id = node_id
             self._select_node(node_id)
 
+            self._update_page_security_observations(
+                node_id,
+                url,
+            )
+
             self._schedule_preview(
                 node_id,
                 normalized_url,
@@ -2189,6 +2254,11 @@ class MainWindow(QMainWindow):
 
         self._current_node_id = target_id
         self._select_node(target_id)
+
+        self._update_page_security_observations(
+            target_id,
+            url,
+        )
 
         self._schedule_preview(
             target_id,
@@ -2583,6 +2653,42 @@ class MainWindow(QMainWindow):
             or "page"
         ).lower()
 
+        request_headers = normalize_headers(
+            event.get(
+                "request_headers"
+            )
+        )
+
+        response_headers = normalize_headers(
+            event.get(
+                "response_headers"
+            )
+        )
+
+        request_body = str(
+            event.get(
+                "request_body",
+                "",
+            )
+            or ""
+        )
+
+        cookie_summary = (
+            self.browser_host
+            .cookie_security_for_url(
+                url
+            )
+        )
+
+        security_observations = (
+            build_security_observations(
+                event,
+                cookie_summary=(
+                    cookie_summary
+                ),
+            )
+        )
+
         existing_id = (
             self._api_index.get(
                 key
@@ -2690,6 +2796,22 @@ class MainWindow(QMainWindow):
                                 )
                                 or ""
                             ),
+
+                        "last_request_header_names":
+                            sorted(
+                                request_headers
+                            ),
+
+                        "last_request_body_length":
+                            len(
+                                request_body
+                            ),
+
+                        "last_response_headers":
+                            response_headers,
+
+                        "security_observations":
+                            security_observations,
                     }
                 )
 
@@ -2758,6 +2880,18 @@ class MainWindow(QMainWindow):
                         )
                         or ""
                     ),
+                "last_request_header_names":
+                    sorted(
+                        request_headers
+                    ),
+                "last_request_body_length":
+                    len(
+                        request_body
+                    ),
+                "last_response_headers":
+                    response_headers,
+                "security_observations":
+                    security_observations,
             },
         )
 
@@ -2937,6 +3071,12 @@ class MainWindow(QMainWindow):
             )
         )
 
+        safe_event = (
+            redact_event_for_persistence(
+                event
+            )
+        )
+
         # --------------------------------------------------------------
         # Existing edge
         # --------------------------------------------------------------
@@ -2966,7 +3106,7 @@ class MainWindow(QMainWindow):
                             count,
 
                         "last_event":
-                            dict(event),
+                            safe_event,
                     }
                 )
 
@@ -2988,7 +3128,7 @@ class MainWindow(QMainWindow):
             metadata={
                 "request_count": 1,
                 "last_event":
-                    dict(event),
+                    safe_event,
             },
         )
 

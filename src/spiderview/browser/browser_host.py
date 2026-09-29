@@ -1311,6 +1311,14 @@ class BrowserHost(QWidget):
         self._console_request_counter = 0
         self._api_lab_request_counter = 0
 
+        # Cookie metadata only. Values are intentionally never retained.
+        self._cookies: dict[
+            tuple[str, str, str],
+            dict,
+        ] = {}
+
+        self._install_cookie_tracking()
+
         # --------------------------------------------------------------
         # Buttons
         # --------------------------------------------------------------
@@ -1378,6 +1386,322 @@ class BrowserHost(QWidget):
         self.page.scripts().insert(
             script
         )
+
+    # ------------------------------------------------------------------
+    # Cookie observations
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _cookie_text(
+        value,
+    ) -> str:
+        try:
+            return bytes(
+                value
+            ).decode(
+                "utf-8",
+                errors="replace",
+            )
+        except Exception:
+            return str(
+                value
+            )
+
+    @classmethod
+    def _cookie_key(
+        cls,
+        cookie,
+    ) -> tuple[
+        str,
+        str,
+        str,
+    ]:
+        return (
+            cls._cookie_text(
+                cookie.name()
+            ),
+            str(
+                cookie.domain()
+                or ""
+            ).lower(),
+            str(
+                cookie.path()
+                or "/"
+            ),
+        )
+
+    def _cookie_snapshot(
+        self,
+        cookie,
+    ) -> dict:
+        same_site = ""
+
+        try:
+            policy = (
+                cookie.sameSitePolicy()
+            )
+
+            same_site = getattr(
+                policy,
+                "name",
+                str(policy),
+            )
+
+            if "." in same_site:
+                same_site = same_site.split(
+                    "."
+                )[-1]
+
+        except Exception:
+            same_site = ""
+
+        return {
+            "name":
+                self._cookie_text(
+                    cookie.name()
+                ),
+
+            "domain":
+                str(
+                    cookie.domain()
+                    or ""
+                ),
+
+            "path":
+                str(
+                    cookie.path()
+                    or "/"
+                ),
+
+            "http_only":
+                bool(
+                    cookie.isHttpOnly()
+                ),
+
+            "secure":
+                bool(
+                    cookie.isSecure()
+                ),
+
+            "session":
+                bool(
+                    cookie.isSessionCookie()
+                ),
+
+            "same_site":
+                same_site,
+        }
+
+    def _on_cookie_added(
+        self,
+        cookie,
+    ) -> None:
+        self._cookies[
+            self._cookie_key(
+                cookie
+            )
+        ] = self._cookie_snapshot(
+            cookie
+        )
+
+    def _on_cookie_removed(
+        self,
+        cookie,
+    ) -> None:
+        self._cookies.pop(
+            self._cookie_key(
+                cookie
+            ),
+            None,
+        )
+
+    def _install_cookie_tracking(
+        self,
+    ) -> None:
+        try:
+            store = (
+                self.page
+                .profile()
+                .cookieStore()
+            )
+
+            store.cookieAdded.connect(
+                self._on_cookie_added
+            )
+
+            store.cookieRemoved.connect(
+                self._on_cookie_removed
+            )
+
+            store.loadAllCookies()
+
+        except Exception:
+            # Cookie metadata is an enhancement and must never stop
+            # the embedded browser from starting.
+            pass
+
+    def cookie_security_for_url(
+        self,
+        url: str,
+    ) -> dict:
+        qurl = QUrl(
+            url
+        )
+
+        host = (
+            qurl.host()
+            .lower()
+            .strip(".")
+        )
+
+        request_path = (
+            qurl.path()
+            or "/"
+        )
+
+        if not host:
+            return {}
+
+        matched = []
+
+        for cookie in self._cookies.values():
+            domain = str(
+                cookie.get(
+                    "domain",
+                    "",
+                )
+                or ""
+            ).lower().lstrip(
+                "."
+            )
+
+            if (
+                domain
+                and host != domain
+                and not host.endswith(
+                    "."
+                    + domain
+                )
+            ):
+                continue
+
+            cookie_path = str(
+                cookie.get(
+                    "path",
+                    "/",
+                )
+                or "/"
+            )
+
+            if not request_path.startswith(
+                cookie_path
+            ):
+                continue
+
+            matched.append(
+                cookie
+            )
+
+        if not matched:
+            return {
+                "count": 0,
+                "http_only_true": 0,
+                "http_only_false": 0,
+                "secure_true": 0,
+                "secure_false": 0,
+                "same_site": {},
+                "names": [],
+            }
+
+        same_site: dict[
+            str,
+            int,
+        ] = {}
+
+        for cookie in matched:
+            policy = str(
+                cookie.get(
+                    "same_site",
+                    "",
+                )
+                or "Unspecified"
+            )
+
+            same_site[
+                policy
+            ] = (
+                same_site.get(
+                    policy,
+                    0,
+                )
+                + 1
+            )
+
+        return {
+            "count":
+                len(
+                    matched
+                ),
+
+            "http_only_true":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if cookie.get(
+                        "http_only"
+                    )
+                ),
+
+            "http_only_false":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if not cookie.get(
+                        "http_only"
+                    )
+                ),
+
+            "secure_true":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if cookie.get(
+                        "secure"
+                    )
+                ),
+
+            "secure_false":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if not cookie.get(
+                        "secure"
+                    )
+                ),
+
+            "same_site":
+                same_site,
+
+            # Names help investigation without persisting cookie values.
+            "names":
+                sorted(
+                    str(
+                        cookie.get(
+                            "name",
+                            "",
+                        )
+                    )
+                    for cookie
+                    in matched
+                    if cookie.get(
+                        "name"
+                    )
+                ),
+        }
 
     # ------------------------------------------------------------------
     # UI

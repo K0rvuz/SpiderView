@@ -207,7 +207,8 @@ class BrowserConsolePanel(QWidget):
 
         hint = QLabel(
             "JavaScript no contexto da página. "
-            "Ctrl+Enter executa; Promises são aguardadas automaticamente."
+            "Ctrl+Enter executa; Promises são aguardadas automaticamente. "
+            "Se a página bloquear eval por CSP, use o API Lab para requests."
         )
         hint.setWordWrap(True)
 

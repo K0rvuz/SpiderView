@@ -96,6 +96,7 @@ class SecurityObservationsTests(unittest.TestCase):
             "request_body": '{"password":"secret"}',
             "response_headers": {
                 "content-type": "application/json",
+                "x-auth-token": "response-secret",
             },
         }
 
@@ -118,6 +119,10 @@ class SecurityObservationsTests(unittest.TestCase):
         self.assertEqual(
             safe["request_headers"]["content-type"],
             "application/json",
+        )
+        self.assertEqual(
+            safe["response_headers"]["x-auth-token"],
+            "[redacted]",
         )
         self.assertEqual(
             safe["request_body"],

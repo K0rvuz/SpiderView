@@ -731,6 +731,12 @@ class BrowserConsolePanel(QWidget):
             body or "(empty)"
         )
 
+        if payload.get("truncated"):
+            lines.append("")
+            lines.append(
+                "[response truncated at 2 MB]"
+            )
+
         output = "\n".join(lines)
 
         self.api_response.setPlainText(
@@ -800,7 +806,7 @@ class BrowserConsolePanel(QWidget):
         if request_origin == "api_lab":
             origin = "API Lab"
         else:
-            origin = "Page"
+            origin = "Browser"
 
         duration = event.get(
             "duration_ms"

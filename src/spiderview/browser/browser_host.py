@@ -25,6 +25,8 @@ from PySide6.QtWebEngineWidgets import (
 
 
 EVENT_PREFIX = "__SPIDERVIEW_EVENT__:"
+CONSOLE_RESULT_PREFIX = "__SPIDERVIEW_CONSOLE_RESULT__:"
+API_LAB_RESULT_PREFIX = "__SPIDERVIEW_API_LAB_RESULT__:"
 
 
 INSTRUMENTATION_JS = r"""
@@ -116,6 +118,222 @@ INSTRUMENTATION_JS = r"""
                 value,
                 window.location.href
             ).href;
+
+        } catch (error) {
+
+            return "";
+        }
+    }
+
+
+    function headersObject(value) {
+
+        const result = {};
+
+        if (!value) {
+            return result;
+        }
+
+        try {
+
+            const headers = (
+                value instanceof Headers
+                ? value
+                : new Headers(value)
+            );
+
+            headers.forEach(
+                (headerValue, name) => {
+
+                    result[
+                        String(name).toLowerCase()
+                    ] = String(headerValue);
+                }
+            );
+
+        } catch (error) {
+
+            // Request capture must never break the page.
+
+        }
+
+        return result;
+    }
+
+
+    function mergeHeaders(
+        base,
+        override
+    ) {
+
+        return Object.assign(
+            {},
+            base || {},
+            override || {},
+        );
+    }
+
+
+    function rawHeadersObject(raw) {
+
+        const result = {};
+
+        for (
+            const line
+            of String(raw || "").split(
+                /\r?\n/
+            )
+        ) {
+
+            const index = line.indexOf(
+                ":"
+            );
+
+            if (index <= 0) {
+                continue;
+            }
+
+            const name = (
+                line
+                .slice(0, index)
+                .trim()
+                .toLowerCase()
+            );
+
+            const value = (
+                line
+                .slice(index + 1)
+                .trim()
+            );
+
+            if (name) {
+                result[name] = value;
+            }
+        }
+
+        return result;
+    }
+
+
+    function bodyPreview(value) {
+
+        if (value == null) {
+            return "";
+        }
+
+        try {
+
+            if (
+                typeof value
+                === "string"
+            ) {
+                return value.slice(
+                    0,
+                    20000
+                );
+            }
+
+            if (
+                typeof URLSearchParams
+                !== "undefined"
+                && value
+                instanceof URLSearchParams
+            ) {
+                return value
+                    .toString()
+                    .slice(
+                        0,
+                        20000
+                    );
+            }
+
+            if (
+                typeof FormData
+                !== "undefined"
+                && value
+                instanceof FormData
+            ) {
+
+                const entries = [];
+
+                for (
+                    const [name, item]
+                    of value.entries()
+                ) {
+
+                    if (
+                        typeof File
+                        !== "undefined"
+                        && item
+                        instanceof File
+                    ) {
+
+                        entries.push(
+                            [
+                                name,
+                                "[File "
+                                + item.name
+                                + " · "
+                                + item.size
+                                + " bytes]",
+                            ]
+                        );
+
+                    } else {
+
+                        entries.push(
+                            [
+                                name,
+                                String(item),
+                            ]
+                        );
+                    }
+                }
+
+                return JSON.stringify(
+                    entries
+                ).slice(
+                    0,
+                    20000
+                );
+            }
+
+            if (
+                typeof Blob
+                !== "undefined"
+                && value
+                instanceof Blob
+            ) {
+
+                return (
+                    "[Blob "
+                    + (value.type || "unknown")
+                    + " · "
+                    + value.size
+                    + " bytes]"
+                );
+            }
+
+            if (
+                typeof ArrayBuffer
+                !== "undefined"
+                && value
+                instanceof ArrayBuffer
+            ) {
+
+                return (
+                    "[ArrayBuffer "
+                    + value.byteLength
+                    + " bytes]"
+                );
+            }
+
+            return String(
+                value
+            ).slice(
+                0,
+                20000
+            );
 
         } catch (error) {
 
@@ -353,8 +571,15 @@ INSTRUMENTATION_JS = r"""
             const sourceUrl =
                 window.location.href;
 
+            const requestOrigin = String(
+                init?.__spiderview_origin
+                || "page"
+            );
+
             let requestUrl = "";
             let method = "GET";
+            let requestHeaders = {};
+            let requestBody = "";
 
             try {
 
@@ -372,6 +597,34 @@ INSTRUMENTATION_JS = r"""
                         || "GET"
                     ).toUpperCase();
 
+                    requestHeaders = (
+                        headersObject(
+                            input.headers
+                        )
+                    );
+
+                    if (
+                        method !== "GET"
+                        && method !== "HEAD"
+                    ) {
+
+                        try {
+
+                            requestBody = (
+                                await input
+                                .clone()
+                                .text()
+                            ).slice(
+                                0,
+                                20000
+                            );
+
+                        } catch (error) {
+
+                            requestBody = "";
+                        }
+                    }
+
                 } else {
 
                     requestUrl = absoluteUrl(
@@ -384,10 +637,33 @@ INSTRUMENTATION_JS = r"""
                     ).toUpperCase();
                 }
 
+                requestHeaders = mergeHeaders(
+                    requestHeaders,
+                    headersObject(
+                        init?.headers
+                    )
+                );
+
+                if (
+                    init
+                    && Object.prototype
+                    .hasOwnProperty.call(
+                        init,
+                        "body"
+                    )
+                ) {
+
+                    requestBody = bodyPreview(
+                        init.body
+                    );
+                }
+
             } catch (error) {
 
                 requestUrl = "";
                 method = "GET";
+                requestHeaders = {};
+                requestBody = "";
             }
 
             try {
@@ -402,25 +678,27 @@ INSTRUMENTATION_JS = r"""
                     performance.now()
                     - startedAt;
 
-                let contentType = "";
+                const responseHeaders = (
+                    headersObject(
+                        response.headers
+                    )
+                );
 
-                try {
-
-                    contentType =
-                        response.headers.get(
-                            "content-type"
-                        ) || "";
-
-                } catch (error) {
-
-                    contentType = "";
-                }
+                const contentType = (
+                    responseHeaders[
+                        "content-type"
+                    ]
+                    || ""
+                );
 
                 emit({
                     kind: "fetch",
 
                     source_url:
                         sourceUrl,
+
+                    request_origin:
+                        requestOrigin,
 
                     request_url:
                         requestUrl,
@@ -431,6 +709,15 @@ INSTRUMENTATION_JS = r"""
 
                     method:
                         method,
+
+                    request_headers:
+                        requestHeaders,
+
+                    request_body:
+                        requestBody,
+
+                    response_headers:
+                        responseHeaders,
 
                     status:
                         response.status,
@@ -464,6 +751,9 @@ INSTRUMENTATION_JS = r"""
                     source_url:
                         sourceUrl,
 
+                    request_origin:
+                        requestOrigin,
+
                     request_url:
                         requestUrl,
 
@@ -472,6 +762,15 @@ INSTRUMENTATION_JS = r"""
 
                     method:
                         method,
+
+                    request_headers:
+                        requestHeaders,
+
+                    request_body:
+                        requestBody,
+
+                    response_headers:
+                        {},
 
                     status:
                         null,
@@ -510,6 +809,10 @@ INSTRUMENTATION_JS = r"""
     const originalXhrSend =
         XMLHttpRequest.prototype.send;
 
+    const originalXhrSetRequestHeader =
+        XMLHttpRequest.prototype.setRequestHeader;
+
+
     XMLHttpRequest.prototype.open = function(
         method,
         url
@@ -528,6 +831,15 @@ INSTRUMENTATION_JS = r"""
 
             source_url:
                 window.location.href,
+
+            request_origin:
+                "page",
+
+            request_headers:
+                {},
+
+            request_body:
+                "",
         };
 
         return originalXhrOpen.apply(
@@ -537,7 +849,53 @@ INSTRUMENTATION_JS = r"""
     };
 
 
-    XMLHttpRequest.prototype.send = function() {
+    XMLHttpRequest.prototype.setRequestHeader = function(
+        name,
+        value
+    ) {
+
+        const info = (
+            this.__spiderview_request__
+            || null
+        );
+
+        if (info) {
+
+            const key = String(
+                name || ""
+            ).toLowerCase();
+
+            if (key) {
+
+                const current = (
+                    info.request_headers[
+                        key
+                    ]
+                    || ""
+                );
+
+                info.request_headers[
+                    key
+                ] = (
+                    current
+                    ? current
+                        + ", "
+                        + String(value)
+                    : String(value)
+                );
+            }
+        }
+
+        return originalXhrSetRequestHeader.apply(
+            this,
+            arguments
+        );
+    };
+
+
+    XMLHttpRequest.prototype.send = function(
+        body
+    ) {
 
         const xhr = this;
 
@@ -548,7 +906,17 @@ INSTRUMENTATION_JS = r"""
                 request_url: "",
                 source_url:
                     window.location.href,
+                request_origin:
+                    "page",
+                request_headers:
+                    {},
+                request_body:
+                    "",
             }
+        );
+
+        info.request_body = bodyPreview(
+            body
         );
 
         const startedAt =
@@ -560,19 +928,27 @@ INSTRUMENTATION_JS = r"""
                 performance.now()
                 - startedAt;
 
-            let contentType = "";
+            let responseHeaders = {};
 
             try {
 
-                contentType =
-                    xhr.getResponseHeader(
-                        "content-type"
-                    ) || "";
+                responseHeaders = (
+                    rawHeadersObject(
+                        xhr.getAllResponseHeaders()
+                    )
+                );
 
             } catch (error) {
 
-                contentType = "";
+                responseHeaders = {};
             }
+
+            const contentType = (
+                responseHeaders[
+                    "content-type"
+                ]
+                || ""
+            );
 
             const status =
                 Number.isFinite(
@@ -587,6 +963,10 @@ INSTRUMENTATION_JS = r"""
                 source_url:
                     info.source_url,
 
+                request_origin:
+                    info.request_origin
+                    || "page",
+
                 request_url:
                     info.request_url,
 
@@ -596,6 +976,17 @@ INSTRUMENTATION_JS = r"""
 
                 method:
                     info.method,
+
+                request_headers:
+                    info.request_headers
+                    || {},
+
+                request_body:
+                    info.request_body
+                    || "",
+
+                response_headers:
+                    responseHeaders,
 
                 status:
                     status,
@@ -646,6 +1037,10 @@ INSTRUMENTATION_JS = r"""
                 source_url:
                     info.source_url,
 
+                request_origin:
+                    info.request_origin
+                    || "page",
+
                 request_url:
                     info.request_url,
 
@@ -654,6 +1049,17 @@ INSTRUMENTATION_JS = r"""
 
                 method:
                     info.method,
+
+                request_headers:
+                    info.request_headers
+                    || {},
+
+                request_body:
+                    info.request_body
+                    || "",
+
+                response_headers:
+                    {},
 
                 status:
                     null,
@@ -699,6 +1105,9 @@ class SpiderWebPage(QWebEnginePage):
     "Failed to parse video contentType:",
     )
     browserEvent = Signal(object)
+    consoleResult = Signal(object)
+    apiLabResult = Signal(object)
+    consoleMessageDetected = Signal(object)
 
     def javaScriptConsoleMessage(
         self,
@@ -742,6 +1151,46 @@ class SpiderWebPage(QWebEnginePage):
             return
 
         # --------------------------------------------------------------
+        # Browser Console / API Lab results
+        # --------------------------------------------------------------
+
+        for prefix, signal in (
+            (
+                CONSOLE_RESULT_PREFIX,
+                self.consoleResult,
+            ),
+            (
+                API_LAB_RESULT_PREFIX,
+                self.apiLabResult,
+            ),
+        ):
+            if not message.startswith(
+                prefix
+            ):
+                continue
+
+            raw = message[
+                len(prefix):
+            ]
+
+            try:
+                payload = json.loads(
+                    raw
+                )
+            except json.JSONDecodeError:
+                return
+
+            if isinstance(
+                payload,
+                dict,
+            ):
+                signal.emit(
+                    payload
+                )
+
+            return
+
+        # --------------------------------------------------------------
         # Ruído conhecido do Chromium / páginas
         # --------------------------------------------------------------
 
@@ -763,6 +1212,21 @@ class SpiderWebPage(QWebEnginePage):
         # --------------------------------------------------------------
         # Console normal
         # --------------------------------------------------------------
+
+        level_name = getattr(
+            level,
+            "name",
+            str(level),
+        )
+
+        self.consoleMessageDetected.emit(
+            {
+                "level": level_name,
+                "message": message,
+                "line_number": line_number,
+                "source_id": source_id,
+            }
+        )
 
         super().javaScriptConsoleMessage(
             level,
@@ -801,6 +1265,20 @@ class BrowserHost(QWidget):
         object
     )
 
+    # Browser Console
+    javascriptResult = Signal(
+        object
+    )
+
+    consoleMessageDetected = Signal(
+        object
+    )
+
+    # API Lab
+    apiLabResult = Signal(
+        object
+    )
+
     def __init__(
         self,
         parent=None,
@@ -829,6 +1307,17 @@ class BrowserHost(QWidget):
         # --------------------------------------------------------------
 
         self._navigation_origin = "page"
+
+        self._console_request_counter = 0
+        self._api_lab_request_counter = 0
+
+        # Cookie metadata only. Values are intentionally never retained.
+        self._cookies: dict[
+            tuple[str, str, str],
+            dict,
+        ] = {}
+
+        self._install_cookie_tracking()
 
         # --------------------------------------------------------------
         # Buttons
@@ -897,6 +1386,337 @@ class BrowserHost(QWidget):
         self.page.scripts().insert(
             script
         )
+
+    # ------------------------------------------------------------------
+    # Cookie observations
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _cookie_text(
+        value,
+    ) -> str:
+        try:
+            return bytes(
+                value
+            ).decode(
+                "utf-8",
+                errors="replace",
+            )
+        except Exception:
+            return str(
+                value
+            )
+
+    @classmethod
+    def _cookie_key(
+        cls,
+        cookie,
+    ) -> tuple[
+        str,
+        str,
+        str,
+    ]:
+        return (
+            cls._cookie_text(
+                cookie.name()
+            ),
+            str(
+                cookie.domain()
+                or ""
+            ).lower(),
+            str(
+                cookie.path()
+                or "/"
+            ),
+        )
+
+    def _cookie_snapshot(
+        self,
+        cookie,
+    ) -> dict:
+        same_site = ""
+
+        try:
+            policy = (
+                cookie.sameSitePolicy()
+            )
+
+            same_site = getattr(
+                policy,
+                "name",
+                str(policy),
+            )
+
+            if "." in same_site:
+                same_site = same_site.split(
+                    "."
+                )[-1]
+
+        except Exception:
+            same_site = ""
+
+        return {
+            "name":
+                self._cookie_text(
+                    cookie.name()
+                ),
+
+            "domain":
+                str(
+                    cookie.domain()
+                    or ""
+                ),
+
+            "path":
+                str(
+                    cookie.path()
+                    or "/"
+                ),
+
+            "http_only":
+                bool(
+                    cookie.isHttpOnly()
+                ),
+
+            "secure":
+                bool(
+                    cookie.isSecure()
+                ),
+
+            "session":
+                bool(
+                    cookie.isSessionCookie()
+                ),
+
+            "same_site":
+                same_site,
+        }
+
+    def _on_cookie_added(
+        self,
+        cookie,
+    ) -> None:
+        self._cookies[
+            self._cookie_key(
+                cookie
+            )
+        ] = self._cookie_snapshot(
+            cookie
+        )
+
+    def _on_cookie_removed(
+        self,
+        cookie,
+    ) -> None:
+        self._cookies.pop(
+            self._cookie_key(
+                cookie
+            ),
+            None,
+        )
+
+    def _install_cookie_tracking(
+        self,
+    ) -> None:
+        try:
+            store = (
+                self.page
+                .profile()
+                .cookieStore()
+            )
+
+            store.cookieAdded.connect(
+                self._on_cookie_added
+            )
+
+            store.cookieRemoved.connect(
+                self._on_cookie_removed
+            )
+
+            store.loadAllCookies()
+
+        except Exception:
+            # Cookie metadata is an enhancement and must never stop
+            # the embedded browser from starting.
+            pass
+
+    def cookie_security_for_url(
+        self,
+        url: str,
+    ) -> dict:
+        qurl = QUrl(
+            url
+        )
+
+        host = (
+            qurl.host()
+            .lower()
+            .strip(".")
+        )
+
+        request_path = (
+            qurl.path()
+            or "/"
+        )
+
+        scheme = (
+            qurl.scheme()
+            .lower()
+        )
+
+        if not host:
+            return {}
+
+        matched = []
+
+        for cookie in self._cookies.values():
+            domain = str(
+                cookie.get(
+                    "domain",
+                    "",
+                )
+                or ""
+            ).lower().lstrip(
+                "."
+            )
+
+            if not domain:
+                continue
+
+            if (
+                host != domain
+                and not host.endswith(
+                    "."
+                    + domain
+                )
+            ):
+                continue
+
+            if (
+                cookie.get(
+                    "secure"
+                )
+                and scheme != "https"
+            ):
+                continue
+
+            cookie_path = str(
+                cookie.get(
+                    "path",
+                    "/",
+                )
+                or "/"
+            )
+
+            if not request_path.startswith(
+                cookie_path
+            ):
+                continue
+
+            matched.append(
+                cookie
+            )
+
+        if not matched:
+            return {
+                "count": 0,
+                "http_only_true": 0,
+                "http_only_false": 0,
+                "secure_true": 0,
+                "secure_false": 0,
+                "same_site": {},
+                "names": [],
+            }
+
+        same_site: dict[
+            str,
+            int,
+        ] = {}
+
+        for cookie in matched:
+            policy = str(
+                cookie.get(
+                    "same_site",
+                    "",
+                )
+                or "Unspecified"
+            )
+
+            same_site[
+                policy
+            ] = (
+                same_site.get(
+                    policy,
+                    0,
+                )
+                + 1
+            )
+
+        return {
+            "count":
+                len(
+                    matched
+                ),
+
+            "http_only_true":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if cookie.get(
+                        "http_only"
+                    )
+                ),
+
+            "http_only_false":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if not cookie.get(
+                        "http_only"
+                    )
+                ),
+
+            "secure_true":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if cookie.get(
+                        "secure"
+                    )
+                ),
+
+            "secure_false":
+                sum(
+                    1
+                    for cookie
+                    in matched
+                    if not cookie.get(
+                        "secure"
+                    )
+                ),
+
+            "same_site":
+                same_site,
+
+            # Names help investigation without persisting cookie values.
+            "names":
+                sorted(
+                    str(
+                        cookie.get(
+                            "name",
+                            "",
+                        )
+                    )
+                    for cookie
+                    in matched
+                    if cookie.get(
+                        "name"
+                    )
+                ),
+        }
 
     # ------------------------------------------------------------------
     # UI
@@ -1016,6 +1836,18 @@ class BrowserHost(QWidget):
             self._on_browser_event
         )
 
+        self.page.consoleResult.connect(
+            self.javascriptResult.emit
+        )
+
+        self.page.consoleMessageDetected.connect(
+            self.consoleMessageDetected.emit
+        )
+
+        self.page.apiLabResult.connect(
+            self.apiLabResult.emit
+        )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -1065,6 +1897,348 @@ class BrowserHost(QWidget):
         self.address_bar.setFocus()
 
         self.address_bar.selectAll()
+
+    def execute_javascript(
+        self,
+        code: str,
+    ) -> int | None:
+        """
+        Execute JavaScript in MainWorld and asynchronously return even
+        Promise results through javascriptResult.
+        """
+
+        code = code.strip()
+
+        if not code:
+            return None
+
+        self._console_request_counter += 1
+
+        request_id = (
+            self._console_request_counter
+        )
+
+        source_json = json.dumps(
+            code
+        )
+
+        prefix_json = json.dumps(
+            CONSOLE_RESULT_PREFIX
+        )
+
+        script = r"""
+(async () => {
+    const requestId = %s;
+    const prefix = %s;
+    const source = %s;
+
+    function serialize(value) {
+        if (value === undefined) {
+            return {
+                type: "undefined",
+                value: "undefined",
+            };
+        }
+
+        if (value === null) {
+            return {
+                type: "null",
+                value: "null",
+            };
+        }
+
+        if (
+            typeof Response !== "undefined"
+            && value instanceof Response
+        ) {
+            return {
+                type: "json",
+                value: {
+                    type: "Response",
+                    url: value.url,
+                    status: value.status,
+                    statusText: value.statusText,
+                    ok: value.ok,
+                    redirected: value.redirected,
+                },
+            };
+        }
+
+        if (value instanceof Error) {
+            return {
+                type: "json",
+                value: {
+                    name: value.name,
+                    message: value.message,
+                    stack: value.stack || "",
+                },
+            };
+        }
+
+        const type = typeof value;
+
+        if (
+            type === "string"
+            || type === "number"
+            || type === "boolean"
+        ) {
+            return {
+                type: type,
+                value: value,
+            };
+        }
+
+        if (type === "bigint") {
+            return {
+                type: "bigint",
+                value: value.toString() + "n",
+            };
+        }
+
+        if (
+            type === "function"
+            || type === "symbol"
+        ) {
+            return {
+                type: type,
+                value: String(value),
+            };
+        }
+
+        try {
+            return {
+                type: "json",
+                value: JSON.parse(
+                    JSON.stringify(value)
+                ),
+            };
+        } catch (error) {
+            return {
+                type: type,
+                value: String(value),
+            };
+        }
+    }
+
+    async function executeSource() {
+        try {
+            return await eval(source);
+        } catch (error) {
+            const topLevelAwait = (
+                error instanceof SyntaxError
+                && /\\bawait\\b/.test(source)
+            );
+
+            if (!topLevelAwait) {
+                throw error;
+            }
+
+            const AsyncFunction = (
+                Object.getPrototypeOf(
+                    async function() {}
+                ).constructor
+            );
+
+            try {
+                const expressionRunner = (
+                    new AsyncFunction(
+                        "return await (" + source + ");"
+                    )
+                );
+
+                return await expressionRunner.call(
+                    window
+                );
+            } catch (expressionError) {
+                const statementRunner = (
+                    new AsyncFunction(
+                        source
+                    )
+                );
+
+                return await statementRunner.call(
+                    window
+                );
+            }
+        }
+    }
+
+    try {
+        const result = await executeSource();
+
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: requestId,
+                ok: true,
+                result: serialize(result),
+            })
+        );
+    } catch (error) {
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: requestId,
+                ok: false,
+                error: String(
+                    error?.stack
+                    || error?.message
+                    || error
+                ),
+            })
+        );
+    }
+})();
+""" % (
+            request_id,
+            prefix_json,
+            source_json,
+        )
+
+        self.page.runJavaScript(
+            script
+        )
+
+        return request_id
+
+    def execute_api_request(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str] | None = None,
+        body: str = "",
+    ) -> int | None:
+        """
+        Send a fetch from the loaded page context.
+
+        The instrumentation wrapper sees the same fetch and emits the
+        regular apiRequestDetected event, so API Lab traffic follows the
+        normal SpiderView request -> graph pipeline.
+        """
+
+        method = (
+            method.strip().upper()
+            or "GET"
+        )
+
+        url = url.strip()
+
+        if not url:
+            return None
+
+        self._api_lab_request_counter += 1
+
+        request_id = (
+            self._api_lab_request_counter
+        )
+
+        request_json = json.dumps(
+            {
+                "id": request_id,
+                "method": method,
+                "url": url,
+                "headers": headers or {},
+                "body": body,
+            },
+            ensure_ascii=False,
+        )
+
+        prefix_json = json.dumps(
+            API_LAB_RESULT_PREFIX
+        )
+
+        script = r"""
+(async () => {
+    const request = %s;
+    const prefix = %s;
+    const startedAt = performance.now();
+
+    try {
+        const init = {
+            method: request.method,
+            headers: request.headers || {},
+            credentials: "include",
+            __spiderview_origin: "api_lab",
+        };
+
+        if (
+            request.body
+            && request.method !== "GET"
+            && request.method !== "HEAD"
+        ) {
+            init.body = request.body;
+        }
+
+        const response = await fetch(
+            request.url,
+            init
+        );
+
+        const body = await response.text();
+
+        const headers = {};
+
+        response.headers.forEach(
+            (value, name) => {
+                headers[name] = value;
+            }
+        );
+
+        const durationMs = (
+            performance.now()
+            - startedAt
+        );
+
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: request.id,
+                ok: true,
+                url: response.url,
+                status: response.status,
+                status_text: response.statusText,
+                redirected: response.redirected,
+                headers: headers,
+                body: body.slice(0, 2000000),
+                truncated: body.length > 2000000,
+                duration_ms: Math.round(
+                    durationMs * 100
+                ) / 100,
+            })
+        );
+    } catch (error) {
+        const durationMs = (
+            performance.now()
+            - startedAt
+        );
+
+        console.log(
+            prefix
+            + JSON.stringify({
+                id: request.id,
+                ok: false,
+                error: String(
+                    error?.stack
+                    || error?.message
+                    || error
+                ),
+                duration_ms: Math.round(
+                    durationMs * 100
+                ) / 100,
+            })
+        );
+    }
+})();
+""" % (
+            request_json,
+            prefix_json,
+        )
+
+        self.page.runJavaScript(
+            script
+        )
+
+        return request_id
 
     def capture_preview(
         self,

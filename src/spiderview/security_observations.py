@@ -173,6 +173,14 @@ def build_security_observations(
         )
     )
 
+    request_headers = (
+        normalize_headers(
+            event.get(
+                "request_headers"
+            )
+        )
+    )
+
     target_url = str(
         event.get(
             "url",
@@ -296,6 +304,39 @@ def build_security_observations(
                 response_headers.get(
                     "permissions-policy"
                 )
+            ),
+
+        "authorization_header_observed":
+            any(
+                (
+                    name
+                    == "authorization"
+                    or "auth" in name
+                )
+                for name
+                in request_headers
+            ),
+
+        "csrf_header_observed":
+            any(
+                (
+                    "csrf" in name
+                    or "xsrf" in name
+                )
+                for name
+                in request_headers
+            ),
+
+        "server":
+            response_headers.get(
+                "server",
+                "",
+            ),
+
+        "x_powered_by":
+            response_headers.get(
+                "x-powered-by",
+                "",
             ),
     }
 

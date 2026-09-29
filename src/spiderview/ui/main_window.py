@@ -33,6 +33,7 @@ from ..security_observations import (
     build_security_observations,
     normalize_headers,
     redact_event_for_persistence,
+    redact_headers,
 )
 from .analysis_toolbar import AnalysisToolbar
 from .browser_console import BrowserConsolePanel
@@ -2813,7 +2814,9 @@ class MainWindow(QMainWindow):
                             ),
 
                         "last_response_headers":
-                            response_headers,
+                            redact_headers(
+                                response_headers
+                            ),
 
                         "security_observations":
                             security_observations,
@@ -2894,7 +2897,9 @@ class MainWindow(QMainWindow):
                         request_body
                     ),
                 "last_response_headers":
-                    response_headers,
+                    redact_headers(
+                        response_headers
+                    ),
                 "security_observations":
                     security_observations,
             },

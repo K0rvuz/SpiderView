@@ -126,6 +126,222 @@ INSTRUMENTATION_JS = r"""
     }
 
 
+    function headersObject(value) {
+
+        const result = {};
+
+        if (!value) {
+            return result;
+        }
+
+        try {
+
+            const headers = (
+                value instanceof Headers
+                ? value
+                : new Headers(value)
+            );
+
+            headers.forEach(
+                (headerValue, name) => {
+
+                    result[
+                        String(name).toLowerCase()
+                    ] = String(headerValue);
+                }
+            );
+
+        } catch (error) {
+
+            // Request capture must never break the page.
+
+        }
+
+        return result;
+    }
+
+
+    function mergeHeaders(
+        base,
+        override
+    ) {
+
+        return Object.assign(
+            {},
+            base || {},
+            override || {},
+        );
+    }
+
+
+    function rawHeadersObject(raw) {
+
+        const result = {};
+
+        for (
+            const line
+            of String(raw || "").split(
+                /\r?\n/
+            )
+        ) {
+
+            const index = line.indexOf(
+                ":"
+            );
+
+            if (index <= 0) {
+                continue;
+            }
+
+            const name = (
+                line
+                .slice(0, index)
+                .trim()
+                .toLowerCase()
+            );
+
+            const value = (
+                line
+                .slice(index + 1)
+                .trim()
+            );
+
+            if (name) {
+                result[name] = value;
+            }
+        }
+
+        return result;
+    }
+
+
+    function bodyPreview(value) {
+
+        if (value == null) {
+            return "";
+        }
+
+        try {
+
+            if (
+                typeof value
+                === "string"
+            ) {
+                return value.slice(
+                    0,
+                    20000
+                );
+            }
+
+            if (
+                typeof URLSearchParams
+                !== "undefined"
+                && value
+                instanceof URLSearchParams
+            ) {
+                return value
+                    .toString()
+                    .slice(
+                        0,
+                        20000
+                    );
+            }
+
+            if (
+                typeof FormData
+                !== "undefined"
+                && value
+                instanceof FormData
+            ) {
+
+                const entries = [];
+
+                for (
+                    const [name, item]
+                    of value.entries()
+                ) {
+
+                    if (
+                        typeof File
+                        !== "undefined"
+                        && item
+                        instanceof File
+                    ) {
+
+                        entries.push(
+                            [
+                                name,
+                                "[File "
+                                + item.name
+                                + " · "
+                                + item.size
+                                + " bytes]",
+                            ]
+                        );
+
+                    } else {
+
+                        entries.push(
+                            [
+                                name,
+                                String(item),
+                            ]
+                        );
+                    }
+                }
+
+                return JSON.stringify(
+                    entries
+                ).slice(
+                    0,
+                    20000
+                );
+            }
+
+            if (
+                typeof Blob
+                !== "undefined"
+                && value
+                instanceof Blob
+            ) {
+
+                return (
+                    "[Blob "
+                    + (value.type || "unknown")
+                    + " · "
+                    + value.size
+                    + " bytes]"
+                );
+            }
+
+            if (
+                typeof ArrayBuffer
+                !== "undefined"
+                && value
+                instanceof ArrayBuffer
+            ) {
+
+                return (
+                    "[ArrayBuffer "
+                    + value.byteLength
+                    + " bytes]"
+                );
+            }
+
+            return String(
+                value
+            ).slice(
+                0,
+                20000
+            );
+
+        } catch (error) {
+
+            return "";
+        }
+    }
+
+
     // --------------------------------------------------------------
     // Click
     // --------------------------------------------------------------
@@ -362,6 +578,8 @@ INSTRUMENTATION_JS = r"""
 
             let requestUrl = "";
             let method = "GET";
+            let requestHeaders = {};
+            let requestBody = "";
 
             try {
 
@@ -379,6 +597,34 @@ INSTRUMENTATION_JS = r"""
                         || "GET"
                     ).toUpperCase();
 
+                    requestHeaders = (
+                        headersObject(
+                            input.headers
+                        )
+                    );
+
+                    if (
+                        method !== "GET"
+                        && method !== "HEAD"
+                    ) {
+
+                        try {
+
+                            requestBody = (
+                                await input
+                                .clone()
+                                .text()
+                            ).slice(
+                                0,
+                                20000
+                            );
+
+                        } catch (error) {
+
+                            requestBody = "";
+                        }
+                    }
+
                 } else {
 
                     requestUrl = absoluteUrl(
@@ -391,10 +637,33 @@ INSTRUMENTATION_JS = r"""
                     ).toUpperCase();
                 }
 
+                requestHeaders = mergeHeaders(
+                    requestHeaders,
+                    headersObject(
+                        init?.headers
+                    )
+                );
+
+                if (
+                    init
+                    && Object.prototype
+                    .hasOwnProperty.call(
+                        init,
+                        "body"
+                    )
+                ) {
+
+                    requestBody = bodyPreview(
+                        init.body
+                    );
+                }
+
             } catch (error) {
 
                 requestUrl = "";
                 method = "GET";
+                requestHeaders = {};
+                requestBody = "";
             }
 
             try {
@@ -409,19 +678,18 @@ INSTRUMENTATION_JS = r"""
                     performance.now()
                     - startedAt;
 
-                let contentType = "";
+                const responseHeaders = (
+                    headersObject(
+                        response.headers
+                    )
+                );
 
-                try {
-
-                    contentType =
-                        response.headers.get(
-                            "content-type"
-                        ) || "";
-
-                } catch (error) {
-
-                    contentType = "";
-                }
+                const contentType = (
+                    responseHeaders[
+                        "content-type"
+                    ]
+                    || ""
+                );
 
                 emit({
                     kind: "fetch",
@@ -441,6 +709,15 @@ INSTRUMENTATION_JS = r"""
 
                     method:
                         method,
+
+                    request_headers:
+                        requestHeaders,
+
+                    request_body:
+                        requestBody,
+
+                    response_headers:
+                        responseHeaders,
 
                     status:
                         response.status,
@@ -486,6 +763,15 @@ INSTRUMENTATION_JS = r"""
                     method:
                         method,
 
+                    request_headers:
+                        requestHeaders,
+
+                    request_body:
+                        requestBody,
+
+                    response_headers:
+                        {},
+
                     status:
                         null,
 
@@ -523,6 +809,10 @@ INSTRUMENTATION_JS = r"""
     const originalXhrSend =
         XMLHttpRequest.prototype.send;
 
+    const originalXhrSetRequestHeader =
+        XMLHttpRequest.prototype.setRequestHeader;
+
+
     XMLHttpRequest.prototype.open = function(
         method,
         url
@@ -541,6 +831,15 @@ INSTRUMENTATION_JS = r"""
 
             source_url:
                 window.location.href,
+
+            request_origin:
+                "page",
+
+            request_headers:
+                {},
+
+            request_body:
+                "",
         };
 
         return originalXhrOpen.apply(
@@ -550,7 +849,53 @@ INSTRUMENTATION_JS = r"""
     };
 
 
-    XMLHttpRequest.prototype.send = function() {
+    XMLHttpRequest.prototype.setRequestHeader = function(
+        name,
+        value
+    ) {
+
+        const info = (
+            this.__spiderview_request__
+            || null
+        );
+
+        if (info) {
+
+            const key = String(
+                name || ""
+            ).toLowerCase();
+
+            if (key) {
+
+                const current = (
+                    info.request_headers[
+                        key
+                    ]
+                    || ""
+                );
+
+                info.request_headers[
+                    key
+                ] = (
+                    current
+                    ? current
+                        + ", "
+                        + String(value)
+                    : String(value)
+                );
+            }
+        }
+
+        return originalXhrSetRequestHeader.apply(
+            this,
+            arguments
+        );
+    };
+
+
+    XMLHttpRequest.prototype.send = function(
+        body
+    ) {
 
         const xhr = this;
 
@@ -561,7 +906,17 @@ INSTRUMENTATION_JS = r"""
                 request_url: "",
                 source_url:
                     window.location.href,
+                request_origin:
+                    "page",
+                request_headers:
+                    {},
+                request_body:
+                    "",
             }
+        );
+
+        info.request_body = bodyPreview(
+            body
         );
 
         const startedAt =
@@ -573,19 +928,27 @@ INSTRUMENTATION_JS = r"""
                 performance.now()
                 - startedAt;
 
-            let contentType = "";
+            let responseHeaders = {};
 
             try {
 
-                contentType =
-                    xhr.getResponseHeader(
-                        "content-type"
-                    ) || "";
+                responseHeaders = (
+                    rawHeadersObject(
+                        xhr.getAllResponseHeaders()
+                    )
+                );
 
             } catch (error) {
 
-                contentType = "";
+                responseHeaders = {};
             }
+
+            const contentType = (
+                responseHeaders[
+                    "content-type"
+                ]
+                || ""
+            );
 
             const status =
                 Number.isFinite(
@@ -600,6 +963,10 @@ INSTRUMENTATION_JS = r"""
                 source_url:
                     info.source_url,
 
+                request_origin:
+                    info.request_origin
+                    || "page",
+
                 request_url:
                     info.request_url,
 
@@ -609,6 +976,17 @@ INSTRUMENTATION_JS = r"""
 
                 method:
                     info.method,
+
+                request_headers:
+                    info.request_headers
+                    || {},
+
+                request_body:
+                    info.request_body
+                    || "",
+
+                response_headers:
+                    responseHeaders,
 
                 status:
                     status,
@@ -659,6 +1037,10 @@ INSTRUMENTATION_JS = r"""
                 source_url:
                     info.source_url,
 
+                request_origin:
+                    info.request_origin
+                    || "page",
+
                 request_url:
                     info.request_url,
 
@@ -667,6 +1049,17 @@ INSTRUMENTATION_JS = r"""
 
                 method:
                     info.method,
+
+                request_headers:
+                    info.request_headers
+                    || {},
+
+                request_body:
+                    info.request_body
+                    || "",
+
+                response_headers:
+                    {},
 
                 status:
                     null,

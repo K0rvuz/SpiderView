@@ -52,9 +52,14 @@ class NoteCard(PageCard):
         painter.setPen(QPen(border, 2.5 if self.isSelected() else 1.6))
         painter.drawPath(card)
 
+        # Clip the accent stripe to the rounded card silhouette so it
+        # never protrudes past the card's upper/lower-left corners.
+        painter.save()
+        painter.setClipPath(card)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(accent)
         painter.drawRoundedRect(QRectF(0, 0, 7, self.HEIGHT), 4, 4)
+        painter.restore()
 
         title_font = QFont()
         title_font.setPointSize(11)

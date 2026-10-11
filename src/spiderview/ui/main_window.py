@@ -1702,12 +1702,18 @@ class MainWindow(QMainWindow):
         return path_ids, path_edge_ids, api_edges_by_page
 
     def _restore_path_view(self) -> None:
+        was_isolated = self.canvas.isolated_path_active
         self.canvas.clear_path_view()
-        if self._analysis_view_required():
-            self._refresh_analysis_view(fit=True, preserve_positions=True)
+        # Removing a glow must not recenter or reorganize the user's graph.
+        if was_isolated:
+            if self._analysis_view_required():
+                self._refresh_analysis_view(fit=True, preserve_positions=True)
+            else:
+                QTimer.singleShot(0, self.canvas.fit_graph)
+            message = "Visualização anterior restaurada."
         else:
-            QTimer.singleShot(0, self.canvas.fit_graph)
-        self.statusBar().showMessage("Visualização anterior restaurada.", 3500)
+            message = "Destaque do caminho removido; organização preservada."
+        self.statusBar().showMessage(message, 3500)
 
     # ------------------------------------------------------------------
     # Status bar

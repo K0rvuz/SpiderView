@@ -36,7 +36,17 @@ class NoteCard(PageCard):
 
         card = QPainterPath()
         card.addRoundedRect(rect, self.BORDER_RADIUS, self.BORDER_RADIUS)
-        painter.fillPath(card, QColor("#24231F"))
+
+        # Use the selected note color as a visible, muted card surface while
+        # preserving enough darkness for readable title/body text.
+        base = QColor("#24231F")
+        tint_strength = 0.24
+        tinted_background = QColor(
+            round(base.red() * (1 - tint_strength) + accent.red() * tint_strength),
+            round(base.green() * (1 - tint_strength) + accent.green() * tint_strength),
+            round(base.blue() * (1 - tint_strength) + accent.blue() * tint_strength),
+        )
+        painter.fillPath(card, tinted_background)
 
         border = QColor("#60A5FA") if self.isSelected() else accent
         painter.setPen(QPen(border, 2.5 if self.isSelected() else 1.6))

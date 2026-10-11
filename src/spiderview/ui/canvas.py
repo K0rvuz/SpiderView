@@ -331,7 +331,7 @@ class SpiderCanvas(QGraphicsView):
         del self.nodes[
             node_id
         ]
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     def get_node(
         self,
@@ -396,7 +396,7 @@ class SpiderCanvas(QGraphicsView):
             )
 
         self._update_edge_label_lod()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
         return edge
 
@@ -425,7 +425,7 @@ class SpiderCanvas(QGraphicsView):
         del self.edges[
             edge_id
         ]
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     # ------------------------------------------------------------------
     # Investigation View
@@ -848,7 +848,7 @@ class SpiderCanvas(QGraphicsView):
         self.grow_scene_to_graph()
         self._update_edge_label_lod()
         self.viewport().update()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
         self.fit_graph()
 
     def clear_path_view(self) -> None:
@@ -870,7 +870,7 @@ class SpiderCanvas(QGraphicsView):
         self.grow_scene_to_graph()
         self._update_edge_label_lod()
         self.viewport().update()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     # ------------------------------------------------------------------
     # Canvas
@@ -979,7 +979,7 @@ class SpiderCanvas(QGraphicsView):
         )
 
         self._update_edge_label_lod()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     def _visible_graph_rect(
         self,
@@ -1051,7 +1051,7 @@ class SpiderCanvas(QGraphicsView):
         self._ensure_scene_contains(
             card.sceneBoundingRect()
         )
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     # ------------------------------------------------------------------
     # Infinite-ish scene
@@ -1184,7 +1184,7 @@ class SpiderCanvas(QGraphicsView):
         target = min(self.MAX_ZOOM, max(self.MIN_ZOOM, current * factor))
         self.scale(target / current, target / current)
         self._update_edge_label_lod()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     def contextMenuEvent(self, event) -> None:
         item = self.itemAt(event.pos())
@@ -1295,7 +1295,7 @@ class SpiderCanvas(QGraphicsView):
         )
 
         self._update_edge_label_lod()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     # ------------------------------------------------------------------
     # Manual connections
@@ -1617,7 +1617,7 @@ class SpiderCanvas(QGraphicsView):
                 - delta.y()
             )
 
-            self._minimap.refresh()
+            self.overviewChanged.emit()
             event.accept()
             return
 

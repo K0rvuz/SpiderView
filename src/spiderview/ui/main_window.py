@@ -70,6 +70,20 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("OZAP SpiderView")
 
+        # When dock widgets are tabified (Browser, Console/API Lab,
+        # Graph Overview, Details), keep the tab bar at the top of the
+        # dock area instead of below its content.
+        for dock_area in (
+            Qt.DockWidgetArea.LeftDockWidgetArea,
+            Qt.DockWidgetArea.RightDockWidgetArea,
+            Qt.DockWidgetArea.TopDockWidgetArea,
+            Qt.DockWidgetArea.BottomDockWidgetArea,
+        ):
+            self.setTabPosition(
+                dock_area,
+                QMainWindow.DockWidgetTabPosition.North,
+            )
+
         # --------------------------------------------------------------
         # Mapping state
         # --------------------------------------------------------------

@@ -1491,8 +1491,6 @@ class MainWindow(QMainWindow):
 
         chosen = menu.exec(global_pos)
         if chosen is highlight_action:
-            if self.canvas.virtual_view_active:
-                self.canvas.clear_virtual_view()
             result = self._build_path_investigation(node_id)
             if result is None:
                 self.statusBar().showMessage(
@@ -1500,6 +1498,8 @@ class MainWindow(QMainWindow):
                     5000,
                 )
                 return
+            if self.canvas.virtual_view_active:
+                self.canvas.clear_virtual_view()
             path_ids, path_edge_ids, api_edges_by_page = result
             self.canvas.apply_path_highlight(
                 set(path_ids),
@@ -1510,8 +1510,6 @@ class MainWindow(QMainWindow):
                 4500,
             )
         elif chosen is isolate_action:
-            if self.canvas.virtual_view_active:
-                self.canvas.clear_virtual_view()
             result = self._build_path_investigation(node_id)
             if result is None:
                 self.statusBar().showMessage(
@@ -1519,6 +1517,8 @@ class MainWindow(QMainWindow):
                     5000,
                 )
                 return
+            if self.canvas.virtual_view_active:
+                self.canvas.clear_virtual_view()
             path_ids, path_edge_ids, api_edges_by_page = result
             positions: dict[str, tuple[float, float]] = {}
             visible_node_ids = set(path_ids)

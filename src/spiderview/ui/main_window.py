@@ -42,6 +42,7 @@ from .browser_console import BrowserConsolePanel
 from .canvas import SpiderCanvas
 from .edge_item import EdgeItem
 from .group_card import GroupCard
+from .graph_overview import GraphOverviewWidget
 from .node_details import NodeDetailsPanel
 from .node_metadata_dialog import NodeMetadataDialog
 from .note_dialog import NoteDialog
@@ -168,6 +169,25 @@ class MainWindow(QMainWindow):
 
         self.canvas = SpiderCanvas()
         self.setCentralWidget(self.canvas)
+
+        # --------------------------------------------------------------
+        # Graph overview / path metrics
+        # --------------------------------------------------------------
+
+        self.graph_overview = GraphOverviewWidget(self.canvas)
+        self.graph_overview_dock = QDockWidget("Visualização do Grafo", self)
+        self.graph_overview_dock.setObjectName("GraphOverviewDock")
+        self.graph_overview_dock.setWidget(self.graph_overview)
+        self.graph_overview_dock.setMinimumSize(240, 230)
+        self.graph_overview_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.addDockWidget(
+            Qt.DockWidgetArea.RightDockWidgetArea,
+            self.graph_overview_dock,
+        )
 
         # --------------------------------------------------------------
         # Browser
@@ -509,6 +529,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(
             details_action
         )
+        view_menu.addAction(self.graph_overview_dock.toggleViewAction())
 
         view_menu.addSeparator()
 
@@ -1506,6 +1527,8 @@ class MainWindow(QMainWindow):
             self.browser_dock.hide
         )
 
+        self.canvas.overviewChanged.connect(self.graph_overview.update)
+
         self.browser_host.navigationFinished.connect(
             self._on_browser_navigation_finished
         )
@@ -1545,10 +1568,22 @@ class MainWindow(QMainWindow):
                 )
                 return
             # Do not clear virtual/Tree/Graph layouts. Highlight is styling only.
-            path_ids, path_edge_ids, _api_edges_by_page = result
-            self.canvas.apply_path_highlight(set(path_ids), set(path_edge_ids))
+            path_ids, path_edge_ids, api_edges_by_page = result
+            path_node_ids = set(path_ids)
+            path_edge_ids = set(path_edge_ids)
+            for page_id, api_ids in api_edges_by_page.items():
+                path_node_ids.update(api_ids)
+                for edge_id, edge in self.canvas.edges.items():
+                    if (
+                        edge.transition.source_id == page_id
+                        and edge.transition.target_id in api_ids
+                    ):
+                        path_edge_ids.add(edge_id)
+            self.canvas.apply_path_highlight(path_node_ids, path_edge_ids)
+            api_count = len(path_node_ids) - len(path_ids)
             self.statusBar().showMessage(
-                f"Caminho destacado · {len(path_ids)} página(s) · glow vermelho", 4500
+                f"Caminho destacado · {len(path_ids)} página(s) · "
+                f"{api_count} API(s) relacionada(s)", 4500
             )
 
         elif chosen is isolate_action:

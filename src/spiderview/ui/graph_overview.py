@@ -153,8 +153,22 @@ class GraphOverviewWidget(QWidget):
                 if source is None or target is None:
                     continue
                 highlighted = edge_id in self._canvas._path_highlight_edge_ids
-                color = QColor("#FB4766" if highlighted else "#30435D")
-                pen = QPen(color, 1.8 if highlighted else 0.8)
+                source_node = getattr(items.get(source_id), "node", None)
+                target_node = getattr(items.get(target_id), "node", None)
+                note_node = (
+                    source_node if getattr(source_node, "kind", None) == NodeKind.NOTE
+                    else target_node if getattr(target_node, "kind", None) == NodeKind.NOTE
+                    else None
+                )
+                note_color = QColor(
+                    str((getattr(note_node, "metadata", None) or {}).get("color", "#D9A441"))
+                ) if note_node is not None else QColor("#30435D")
+                if not note_color.isValid():
+                    note_color = QColor("#D9A441")
+                color = QColor("#FB4766") if highlighted else (
+                    note_color if note_node is not None else QColor("#30435D")
+                )
+                pen = QPen(color, 1.8 if highlighted else (1.5 if note_node is not None else 0.8))
                 painter.setPen(pen)
                 painter.drawLine(source, target)
 
@@ -165,6 +179,11 @@ class GraphOverviewWidget(QWidget):
                 highlighted = node_id in self._canvas._path_highlight_node_ids
                 if highlighted:
                     color, radius = QColor("#FB4766"), 4.2
+                elif kind == NodeKind.NOTE:
+                    color = QColor(str((getattr(node, "metadata", None) or {}).get("color", "#D9A441")))
+                    if not color.isValid():
+                        color = QColor("#D9A441")
+                    radius = 4.0
                 elif kind == NodeKind.API:
                     color, radius = QColor("#6377FF"), 3.1
                 elif kind == NodeKind.PAGE:

@@ -573,6 +573,7 @@ class SpiderCanvas(QGraphicsView):
 
         self._update_edge_label_lod()
         self.viewport().update()
+        self._minimap.refresh()
 
     def apply_view_graph(
         self,
@@ -749,6 +750,7 @@ class SpiderCanvas(QGraphicsView):
 
         self._update_edge_label_lod()
         self.viewport().update()
+        self._minimap.refresh()
 
     def _view_item(
         self,

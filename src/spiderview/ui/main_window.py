@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
@@ -12,7 +13,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QMenu,
     QToolBar,
+    QTabWidget,
 )
 
 from ..browser.browser_host import BrowserHost
@@ -29,10 +32,18 @@ from ..graph import (
 )
 from ..models import NodeKind, PageNode, Transition, TransitionType
 from ..persistence.project_store import ProjectStore, ProjectStoreError
+from ..security_observations import (
+    build_security_observations,
+    normalize_headers,
+    redact_event_for_persistence,
+    redact_headers,
+)
 from .analysis_toolbar import AnalysisToolbar
+from .browser_console import BrowserConsolePanel
 from .canvas import SpiderCanvas
 from .edge_item import EdgeItem
 from .group_card import GroupCard
+from .graph_overview import GraphOverviewWidget
 from .node_details import NodeDetailsPanel
 from .node_metadata_dialog import NodeMetadataDialog
 from .note_dialog import NoteDialog
@@ -59,6 +70,20 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("OZAP SpiderView")
+
+        # When dock widgets are tabified (Browser, Console/API Lab,
+        # Graph Overview, Details), keep the tab bar at the top of the
+        # dock area instead of below its content.
+        for dock_area in (
+            Qt.DockWidgetArea.LeftDockWidgetArea,
+            Qt.DockWidgetArea.RightDockWidgetArea,
+            Qt.DockWidgetArea.TopDockWidgetArea,
+            Qt.DockWidgetArea.BottomDockWidgetArea,
+        ):
+            self.setTabPosition(
+                dock_area,
+                QTabWidget.TabPosition.North,
+            )
 
         # --------------------------------------------------------------
         # Mapping state
@@ -161,6 +186,25 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.canvas)
 
         # --------------------------------------------------------------
+        # Graph overview / path metrics
+        # --------------------------------------------------------------
+
+        self.graph_overview = GraphOverviewWidget(self.canvas)
+        self.graph_overview_dock = QDockWidget("Visualização do Grafo", self)
+        self.graph_overview_dock.setObjectName("GraphOverviewDock")
+        self.graph_overview_dock.setWidget(self.graph_overview)
+        self.graph_overview_dock.setMinimumSize(240, 230)
+        self.graph_overview_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.addDockWidget(
+            Qt.DockWidgetArea.RightDockWidgetArea,
+            self.graph_overview_dock,
+        )
+
+        # --------------------------------------------------------------
         # Browser
         # --------------------------------------------------------------
 
@@ -186,6 +230,41 @@ class MainWindow(QMainWindow):
         )
 
         self.browser_dock.hide()
+
+        # --------------------------------------------------------------
+        # Browser Console / API Lab
+        # --------------------------------------------------------------
+
+        self.browser_console = BrowserConsolePanel(
+            self.browser_host,
+            self,
+        )
+
+        self.browser_console_dock = QDockWidget(
+            "Console / API Lab",
+            self,
+        )
+
+        self.browser_console_dock.setWidget(
+            self.browser_console
+        )
+
+        self.browser_console_dock.setMinimumHeight(
+            220
+        )
+
+        self.browser_console_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+
+        self.addDockWidget(
+            Qt.DockWidgetArea.BottomDockWidgetArea,
+            self.browser_console_dock,
+        )
+
+        self.browser_console_dock.hide()
 
         # --------------------------------------------------------------
         # Details
@@ -438,6 +517,20 @@ class MainWindow(QMainWindow):
             browser_action
         )
 
+        console_action = QAction(
+            "Console / API Lab",
+            self,
+        )
+        console_action.setShortcut(
+            QKeySequence("Ctrl+Shift+J")
+        )
+        console_action.triggered.connect(
+            self._show_browser_console
+        )
+        view_menu.addAction(
+            console_action
+        )
+
         details_action = QAction(
             "Details",
             self,
@@ -451,6 +544,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(
             details_action
         )
+        view_menu.addAction(self.graph_overview_dock.toggleViewAction())
 
         view_menu.addSeparator()
 
@@ -484,6 +578,11 @@ class MainWindow(QMainWindow):
         view_menu.addAction(
             fit_action
         )
+
+        restore_path_action = QAction("Restaurar grafo completo", self)
+        restore_path_action.setShortcut(QKeySequence("Esc"))
+        restore_path_action.triggered.connect(self._restore_path_view)
+        view_menu.addAction(restore_path_action)
 
         # --------------------------------------------------------------
         # Layout
@@ -1423,6 +1522,10 @@ class MainWindow(QMainWindow):
             self._open_node
         )
 
+        self.canvas.nodeContextMenuRequested.connect(
+            self._show_node_context_menu
+        )
+
         self.canvas.groupDoubleClicked.connect(
             self._toggle_view_group
         )
@@ -1438,6 +1541,8 @@ class MainWindow(QMainWindow):
         self.browser_host.closeRequested.connect(
             self.browser_dock.hide
         )
+
+        self.canvas.overviewChanged.connect(self.graph_overview.update)
 
         self.browser_host.navigationFinished.connect(
             self._on_browser_navigation_finished
@@ -1456,12 +1561,218 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------
+    # Path investigation
+    # ------------------------------------------------------------------
+
+    def _show_node_context_menu(self, node_id: str, global_pos) -> None:
+        menu = QMenu(self)
+        path_menu = menu.addMenu("Investigar caminho")
+        highlight_action = path_menu.addAction("Destacar caminho")
+        isolate_action = path_menu.addAction("Isolar caminho")
+        restore_action = None
+        if self.canvas.path_view_active:
+            menu.addSeparator()
+            restore_action = menu.addAction("Restaurar grafo completo")
+        chosen = menu.exec(global_pos)
+
+        if chosen is highlight_action:
+            result = self._build_path_investigation(node_id)
+            if result is None:
+                self.statusBar().showMessage(
+                    "Não foi encontrado um caminho de páginas até esse elemento.", 5000
+                )
+                return
+            # Do not clear virtual/Tree/Graph layouts. Highlight is styling only.
+            path_ids, path_edge_ids, api_edges_by_page = result
+            path_node_ids = set(path_ids)
+            path_edge_ids = set(path_edge_ids)
+            for page_id, api_ids in api_edges_by_page.items():
+                path_node_ids.update(api_ids)
+                for edge_id, edge in self.canvas.edges.items():
+                    if (
+                        edge.transition.source_id == page_id
+                        and edge.transition.target_id in api_ids
+                    ):
+                        path_edge_ids.add(edge_id)
+            self.canvas.apply_path_highlight(path_node_ids, path_edge_ids)
+            api_count = len(path_node_ids) - len(path_ids)
+            self.statusBar().showMessage(
+                f"Caminho destacado · {len(path_ids)} página(s) · "
+                f"{api_count} API(s) relacionada(s)", 4500
+            )
+
+        elif chosen is isolate_action:
+            result = self._build_path_investigation(node_id)
+            if result is None:
+                self.statusBar().showMessage(
+                    "Não foi encontrado um caminho de páginas até esse elemento.", 5000
+                )
+                return
+            if self.canvas.virtual_view_active:
+                self.canvas.clear_virtual_view()
+            path_ids, path_edge_ids, api_edges_by_page = result
+            positions: dict[str, tuple[float, float]] = {}
+            visible_node_ids = set(path_ids)
+            visible_edge_ids = set(path_edge_ids)
+            page_y_gap = PageCard.HEIGHT + 115.0
+            side_gap = PageCard.WIDTH + 135.0
+            for index, page_id in enumerate(path_ids):
+                page_y = index * page_y_gap
+                positions[page_id] = (0.0, page_y)
+                api_ids = api_edges_by_page.get(page_id, [])
+                api_count = len(api_ids)
+                for api_index, api_id in enumerate(api_ids):
+                    if api_id in positions:
+                        visible_node_ids.add(api_id)
+                        continue
+                    side = -1.0 if (index + api_index) % 2 == 0 else 1.0
+                    offset = (api_index - (api_count - 1) / 2.0) * (
+                        PageCard.HEIGHT + 25.0
+                    )
+                    positions[api_id] = (side * side_gap, page_y + offset)
+                    visible_node_ids.add(api_id)
+            for page_id, api_ids in api_edges_by_page.items():
+                for api_id in api_ids:
+                    for edge_id, edge in self.canvas.edges.items():
+                        if (
+                            edge.transition.source_id == page_id
+                            and edge.transition.target_id == api_id
+                        ):
+                            visible_edge_ids.add(edge_id)
+            self.canvas.apply_isolated_path(
+                positions=positions,
+                visible_node_ids=visible_node_ids,
+                visible_edge_ids=visible_edge_ids,
+                highlight_node_ids=set(path_ids),
+                highlight_edge_ids=set(path_edge_ids),
+            )
+            self.statusBar().showMessage(
+                f"Caminho isolado · {len(path_ids)} página(s) · "
+                f"{len(visible_node_ids) - len(path_ids)} API(s) no contexto lateral",
+                5500,
+            )
+        elif restore_action is not None and chosen is restore_action:
+            self._restore_path_view()
+
+    def _build_path_investigation(self, target_id: str):
+        """Find a directed page path and list APIs called directly by each page."""
+        if target_id not in self.canvas.nodes:
+            return None
+        nodes = {node_id: card.node for node_id, card in self.canvas.nodes.items()}
+        target = nodes[target_id]
+        page_kinds = {NodeKind.PAGE, NodeKind.DOM_STATE}
+        page_ids = {
+            node_id for node_id, node in nodes.items()
+            if node.kind in page_kinds
+        }
+        if target.kind == NodeKind.API:
+            incoming_pages = [
+                edge.transition.source_id
+                for edge in self.canvas.edges.values()
+                if edge.transition.target_id == target_id
+                and edge.transition.source_id in page_ids
+            ]
+            if incoming_pages:
+                target_id = incoming_pages[0]
+            else:
+                return None
+        elif target_id not in page_ids:
+            return None
+
+        outgoing: dict[str, list[tuple[str, str]]] = {page_id: [] for page_id in page_ids}
+        indegree = {page_id: 0 for page_id in page_ids}
+        for edge_id, edge in self.canvas.edges.items():
+            transition = edge.transition
+            source_id, dest_id = transition.source_id, transition.target_id
+            if source_id not in page_ids or dest_id not in page_ids:
+                continue
+            if transition.type in {
+                TransitionType.FETCH, TransitionType.XHR,
+                TransitionType.REQUEST, TransitionType.DOM_MUTATION,
+            }:
+                continue
+            outgoing[source_id].append((dest_id, edge_id))
+            indegree[dest_id] += 1
+
+        def find_path(start_id: str, goal_id: str):
+            queue = deque([start_id])
+            previous: dict[str, tuple[str, str] | None] = {start_id: None}
+            while queue:
+                current = queue.popleft()
+                if current == goal_id:
+                    break
+                for next_id, edge_id in outgoing.get(current, []):
+                    if next_id not in previous:
+                        previous[next_id] = (current, edge_id)
+                        queue.append(next_id)
+            if goal_id not in previous:
+                return None
+            path, edges = [goal_id], []
+            cursor = goal_id
+            while previous[cursor] is not None:
+                parent_id, edge_id = previous[cursor]
+                edges.append(edge_id)
+                path.append(parent_id)
+                cursor = parent_id
+            return list(reversed(path)), list(reversed(edges))
+
+        roots = [node_id for node_id in page_ids if indegree[node_id] == 0]
+        roots.sort(key=lambda node_id: (
+            0 if (
+                "home" in nodes[node_id].title.lower()
+                or urlsplit(nodes[node_id].url).path.rstrip("/") == ""
+            ) else 1,
+            nodes[node_id].title.lower(),
+        ))
+        if not roots:
+            roots = sorted(page_ids, key=lambda node_id: nodes[node_id].title.lower())
+        path_result = None
+        for root_id in roots:
+            path_result = find_path(root_id, target_id)
+            if path_result is not None:
+                break
+        if path_result is None:
+            return None
+        path_ids, path_edge_ids = path_result
+
+        api_edges_by_page: dict[str, list[str]] = {}
+        for page_id in path_ids:
+            seen_apis = set()
+            api_edges_by_page[page_id] = []
+            for edge in self.canvas.edges.values():
+                transition = edge.transition
+                if (
+                    transition.source_id == page_id
+                    and transition.target_id in nodes
+                    and nodes[transition.target_id].kind == NodeKind.API
+                    and transition.target_id not in seen_apis
+                ):
+                    api_edges_by_page[page_id].append(transition.target_id)
+                    seen_apis.add(transition.target_id)
+        return path_ids, path_edge_ids, api_edges_by_page
+
+    def _restore_path_view(self) -> None:
+        was_isolated = self.canvas.isolated_path_active
+        self.canvas.clear_path_view()
+        # Removing a glow must not recenter or reorganize the user's graph.
+        if was_isolated:
+            if self._analysis_view_required():
+                self._refresh_analysis_view(fit=True, preserve_positions=True)
+            else:
+                QTimer.singleShot(0, self.canvas.fit_graph)
+            message = "Visualização anterior restaurada."
+        else:
+            message = "Destaque do caminho removido; organização preservada."
+        self.statusBar().showMessage(message, 3500)
+
+    # ------------------------------------------------------------------
     # Status bar
     # ------------------------------------------------------------------
 
     def _configure_status_bar(self) -> None:
         self.statusBar().showMessage(
             "Ctrl+L  Browser     •     "
+            "Ctrl+Shift+J  Console/API Lab     •     "
             "Ctrl+D  Details     •     "
             "Ctrl+I  Investigation     •     "
             "Focus/Filters na barra Analysis     •     "
@@ -1643,6 +1954,11 @@ class MainWindow(QMainWindow):
         self.browser_dock.raise_()
         self.browser_host.focus_address_bar()
 
+    def _show_browser_console(self) -> None:
+        self.browser_console_dock.show()
+        self.browser_console_dock.raise_()
+        self.browser_console.focus_console()
+
     def _open_node(
         self,
         node_id: str,
@@ -1659,8 +1975,15 @@ class MainWindow(QMainWindow):
             return
 
         if card.node.kind == NodeKind.API:
+            self.browser_console.prefill_request(
+                card.node.method,
+                card.node.url,
+            )
+            self.browser_console_dock.show()
+            self.browser_console_dock.raise_()
+
             self.statusBar().showMessage(
-                "API "
+                "API Lab: "
                 f"{card.node.method.upper()} "
                 f"{card.node.url}",
                 5000,
@@ -1911,6 +2234,61 @@ class MainWindow(QMainWindow):
     # Browser -> Graph
     # ------------------------------------------------------------------
 
+    def _update_page_security_observations(
+        self,
+        node_id: str,
+        url: str,
+    ) -> None:
+        card = self.canvas.get_node(
+            node_id
+        )
+
+        if card is None:
+            return
+
+        try:
+            scheme = (
+                urlsplit(
+                    url
+                )
+                .scheme
+                .lower()
+            )
+        except ValueError:
+            scheme = ""
+
+        observations = dict(
+            card.node.metadata.get(
+                "security_observations",
+                {},
+            )
+            or {}
+        )
+
+        observations[
+            "https"
+        ] = (
+            scheme == "https"
+        )
+
+        cookie_summary = (
+            self.browser_host
+            .cookie_security_for_url(
+                url
+            )
+        )
+
+        if cookie_summary:
+            observations[
+                "cookies"
+            ] = cookie_summary
+
+        card.node.metadata[
+            "security_observations"
+        ] = observations
+
+        card.update()
+
     def _get_or_create_browser_node(
         self,
         url: str,
@@ -2058,6 +2436,11 @@ class MainWindow(QMainWindow):
             self._current_node_id = node_id
             self._select_node(node_id)
 
+            self._update_page_security_observations(
+                node_id,
+                url,
+            )
+
             self._schedule_preview(
                 node_id,
                 normalized_url,
@@ -2126,6 +2509,11 @@ class MainWindow(QMainWindow):
 
         self._current_node_id = target_id
         self._select_node(target_id)
+
+        self._update_page_security_observations(
+            target_id,
+            url,
+        )
 
         self._schedule_preview(
             target_id,
@@ -2208,6 +2596,11 @@ class MainWindow(QMainWindow):
 
         self._current_node_id = target_id
         self._select_node(target_id)
+
+        self._update_page_security_observations(
+            target_id,
+            url,
+        )
 
         self._schedule_preview(
             target_id,
@@ -2512,6 +2905,50 @@ class MainWindow(QMainWindow):
             or "request"
         ).lower()
 
+        request_origin = str(
+            event.get(
+                "request_origin",
+                "page",
+            )
+            or "page"
+        ).lower()
+
+        request_headers = normalize_headers(
+            event.get(
+                "request_headers"
+            )
+        )
+
+        response_headers = normalize_headers(
+            event.get(
+                "response_headers"
+            )
+        )
+
+        request_body = str(
+            event.get(
+                "request_body",
+                "",
+            )
+            or ""
+        )
+
+        cookie_summary = (
+            self.browser_host
+            .cookie_security_for_url(
+                url
+            )
+        )
+
+        security_observations = (
+            build_security_observations(
+                event,
+                cookie_summary=(
+                    cookie_summary
+                ),
+            )
+        )
+
         existing_id = (
             self._api_index.get(
                 key
@@ -2556,6 +2993,19 @@ class MainWindow(QMainWindow):
                         transport
                     )
 
+                request_origins = list(
+                    node.metadata.get(
+                        "request_origins",
+                        [],
+                    )
+                    or []
+                )
+
+                if request_origin not in request_origins:
+                    request_origins.append(
+                        request_origin
+                    )
+
                 node.metadata.update(
                     {
                         "request_count":
@@ -2563,6 +3013,12 @@ class MainWindow(QMainWindow):
 
                         "transports":
                             transports,
+
+                        "request_origins":
+                            request_origins,
+
+                        "last_request_origin":
+                            request_origin,
 
                         "last_transport":
                             transport,
@@ -2600,6 +3056,24 @@ class MainWindow(QMainWindow):
                                 )
                                 or ""
                             ),
+
+                        "last_request_header_names":
+                            sorted(
+                                request_headers
+                            ),
+
+                        "last_request_body_length":
+                            len(
+                                request_body
+                            ),
+
+                        "last_response_headers":
+                            redact_headers(
+                                response_headers
+                            ),
+
+                        "security_observations":
+                            security_observations,
                     }
                 )
 
@@ -2634,6 +3108,11 @@ class MainWindow(QMainWindow):
                 "transports": [
                     transport
                 ],
+                "request_origins": [
+                    request_origin
+                ],
+                "last_request_origin":
+                    request_origin,
                 "last_transport":
                     transport,
                 "last_status":
@@ -2663,6 +3142,20 @@ class MainWindow(QMainWindow):
                         )
                         or ""
                     ),
+                "last_request_header_names":
+                    sorted(
+                        request_headers
+                    ),
+                "last_request_body_length":
+                    len(
+                        request_body
+                    ),
+                "last_response_headers":
+                    redact_headers(
+                        response_headers
+                    ),
+                "security_observations":
+                    security_observations,
             },
         )
 
@@ -2764,6 +3257,17 @@ class MainWindow(QMainWindow):
             )
             transport_label = "request"
 
+        request_origin = str(
+            event.get(
+                "request_origin",
+                "page",
+            )
+            or "page"
+        ).lower()
+
+        if request_origin == "api_lab":
+            transport_label = "API Lab"
+
         method = str(
             event.get(
                 "method",
@@ -2831,6 +3335,12 @@ class MainWindow(QMainWindow):
             )
         )
 
+        safe_event = (
+            redact_event_for_persistence(
+                event
+            )
+        )
+
         # --------------------------------------------------------------
         # Existing edge
         # --------------------------------------------------------------
@@ -2860,7 +3370,7 @@ class MainWindow(QMainWindow):
                             count,
 
                         "last_event":
-                            dict(event),
+                            safe_event,
                     }
                 )
 
@@ -2882,7 +3392,7 @@ class MainWindow(QMainWindow):
             metadata={
                 "request_count": 1,
                 "last_event":
-                    dict(event),
+                    safe_event,
             },
         )
 
@@ -4440,6 +4950,59 @@ class MainWindow(QMainWindow):
 
             QLineEdit:focus {
                 border: 1px solid #4C9AFF;
+            }
+
+            QPlainTextEdit,
+            QTableWidget,
+            QComboBox {
+                background: #111419;
+                color: #D8DEE9;
+                border: 1px solid #343B46;
+                border-radius: 5px;
+                selection-background-color: #315A86;
+            }
+
+            QHeaderView::section {
+                background: #1B1F26;
+                color: #BFC7D5;
+                border: none;
+                border-right: 1px solid #343B46;
+                border-bottom: 1px solid #343B46;
+                padding: 5px;
+            }
+
+            QTabWidget::pane {
+                border: 1px solid #2C323B;
+                background: #171B21;
+            }
+
+            QTabBar::tab {
+                background: #1B1F26;
+                color: #AEB7C5;
+                padding: 7px 12px;
+                border: 1px solid #2C323B;
+                border-bottom: none;
+            }
+
+            QTabBar::tab:selected {
+                background: #252C35;
+                color: #FFFFFF;
+            }
+
+            QPushButton {
+                background: #252C35;
+                color: #D8DEE9;
+                border: 1px solid #3A424E;
+                border-radius: 5px;
+                padding: 6px 12px;
+            }
+
+            QPushButton:hover {
+                background: #303946;
+            }
+
+            QLabel {
+                color: #BFC7D5;
             }
             """
         )

@@ -80,6 +80,7 @@ class EdgeItem(QGraphicsPathItem):
         )
 
         self._force_hide_label = False
+        self._path_highlight = False
 
         self._pen = self._build_pen()
 
@@ -283,19 +284,28 @@ class EdgeItem(QGraphicsPathItem):
         self,
     ) -> None:
         self._pen = self._build_pen()
-
-        self.setPen(
-            self._pen
-        )
-
-        self._arrow.setBrush(
-            QBrush(
-                self._pen.color()
-            )
-        )
-
+        self.setPen(self._pen)
+        self._arrow.setBrush(QBrush(self._pen.color()))
         self._apply_view_style()
+        if self._path_highlight:
+            self._apply_path_highlight_style()
         self.update_path()
+
+    def set_path_highlight(self, enabled: bool) -> None:
+        self._path_highlight = bool(enabled)
+        if self._path_highlight:
+            self._apply_path_highlight_style()
+        else:
+            self.setPen(self._pen)
+            self._arrow.setBrush(QBrush(self._pen.color()))
+        self.update()
+
+    def _apply_path_highlight_style(self) -> None:
+        pen = QPen(QColor("#FF334F"), 4.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        self.setPen(pen)
+        self._arrow.setBrush(QBrush(QColor("#FF334F")))
 
     def _apply_view_style(
         self,

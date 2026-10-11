@@ -38,7 +38,6 @@ from .group_card import GroupCard
 from .metadata_marker import MetadataMarker
 from .note_card import NoteCard
 from .page_card import PageCard
-from .minimap import MiniMapView
 
 
 class SpiderCanvas(QGraphicsView):
@@ -56,6 +55,7 @@ class SpiderCanvas(QGraphicsView):
     nodeDoubleClicked = Signal(str)
     groupDoubleClicked = Signal(str)
     nodeContextMenuRequested = Signal(str, QPoint)
+    overviewChanged = Signal()
 
     # Note -> raw card. A MainWindow cria a Transition persistente.
     manualConnectionRequested = Signal(str, str)
@@ -219,11 +219,9 @@ class SpiderCanvas(QGraphicsView):
         self._fit_button.clicked.connect(self.fit_graph)
         zoom_layout.addWidget(self._fit_button)
 
-        self._minimap = MiniMapView(self._scene, self, self.viewport())
-        self.horizontalScrollBar().valueChanged.connect(self._minimap.refresh)
-        self.verticalScrollBar().valueChanged.connect(self._minimap.refresh)
+        self.horizontalScrollBar().valueChanged.connect(self.overviewChanged.emit)
+        self.verticalScrollBar().valueChanged.connect(self.overviewChanged.emit)
         self._zoom_controls.raise_()
-        self._minimap.raise_()
 
     # ------------------------------------------------------------------
     # Raw Nodes
@@ -297,7 +295,7 @@ class SpiderCanvas(QGraphicsView):
         self._ensure_scene_contains(
             card.sceneBoundingRect()
         )
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
         return card
 
@@ -890,6 +888,7 @@ class SpiderCanvas(QGraphicsView):
 
         self.view_groups.clear()
         self.view_edges.clear()
+        self.overviewChanged.emit()
 
     def fit_graph(self) -> None:
         """
@@ -1205,13 +1204,8 @@ class SpiderCanvas(QGraphicsView):
             margin,
             max(margin, self.viewport().height() - self._zoom_controls.height() - margin),
         )
-        self._minimap.move(
-            max(margin, self.viewport().width() - self._minimap.width() - margin),
-            max(margin, self.viewport().height() - self._minimap.height() - margin),
-        )
         self._zoom_controls.raise_()
-        self._minimap.raise_()
-        self._minimap.refresh()
+        self.overviewChanged.emit()
 
     def wheelEvent(
         self,

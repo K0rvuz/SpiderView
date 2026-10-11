@@ -224,6 +224,8 @@ class SpiderCanvas(QGraphicsView):
 
         self._minimap = MiniMapView(self._scene, self)
         self._minimap.setToolTip("Mapa geral — clique para navegar")
+        self.horizontalScrollBar().valueChanged.connect(self._minimap.refresh)
+        self.verticalScrollBar().valueChanged.connect(self._minimap.refresh)
         self._zoom_controls.raise_()
         self._minimap.raise_()
 
@@ -763,7 +765,11 @@ class SpiderCanvas(QGraphicsView):
 
     @property
     def path_view_active(self) -> bool:
-        return self._path_view_state is not None
+        return (
+            self._path_view_state is not None
+            or bool(self._path_highlight_node_ids)
+            or bool(self._path_highlight_edge_ids)
+        )
 
     def apply_path_highlight(
         self,

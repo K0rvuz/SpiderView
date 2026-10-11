@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+from PySide6.QtWidgets import QFrame, QGraphicsScene, QGraphicsView
 
 
 class MiniMapView(QGraphicsView):
@@ -12,7 +12,7 @@ class MiniMapView(QGraphicsView):
         super().__init__(scene, parent)
         self._canvas = canvas
         self.setFixedSize(220, 148)
-        self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setRenderHints(QPainter.RenderHint.Antialiasing)

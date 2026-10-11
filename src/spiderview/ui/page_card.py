@@ -58,6 +58,7 @@ class PageCard(QGraphicsObject):
         ] = []
 
         self._preview = QPixmap()
+        self._path_highlight = False
 
         # True no Raw Graph.
         # False em layouts puramente visuais.
@@ -509,6 +510,26 @@ class PageCard(QGraphicsObject):
             | Qt.AlignmentFlag.AlignVCenter,
             self.node.kind.value,
         )
+
+    # ------------------------------------------------------------------
+    # Path investigation highlight
+    # ------------------------------------------------------------------
+
+        # Glow vermelho sem alterar a geometria ou a posição do card.
+        if self._path_highlight:
+            for width, alpha in ((12.0, 24), (8.0, 42), (4.0, 90)):
+                glow = QColor("#FF334F")
+                glow.setAlpha(alpha)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(QPen(glow, width))
+                painter.drawPath(card_path)
+
+    def set_path_highlight(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self._path_highlight == enabled:
+            return
+        self._path_highlight = enabled
+        self.update()
 
     # ------------------------------------------------------------------
     # Preview

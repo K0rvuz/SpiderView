@@ -233,6 +233,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         node: PageNode,
     ) -> PageCard:
+        if self.path_view_active:
+            self.clear_path_view()
         if node.id in self.nodes:
             return self.nodes[
                 node.id
@@ -303,6 +305,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         node_id: str,
     ) -> None:
+        if self.path_view_active:
+            self.clear_path_view()
         # Uma view virtual fica inválida assim que
         # o raw graph sofre mutação estrutural.
         if self._active_view_graph is not None:
@@ -347,6 +351,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         transition: Transition,
     ) -> EdgeItem:
+        if self.path_view_active:
+            self.clear_path_view()
         if transition.id in self.edges:
             return self.edges[
                 transition.id
@@ -400,6 +406,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         edge_id: str,
     ) -> None:
+        if self.path_view_active:
+            self.clear_path_view()
         if self._active_view_graph is not None:
             self.clear_virtual_view()
 
@@ -771,6 +779,10 @@ class SpiderCanvas(QGraphicsView):
             or bool(self._path_highlight_node_ids)
             or bool(self._path_highlight_edge_ids)
         )
+
+    @property
+    def isolated_path_active(self) -> bool:
+        return self._path_view_state is not None
 
     def _clear_path_highlights(self) -> None:
         for card in self.nodes.values():
@@ -1611,6 +1623,7 @@ class SpiderCanvas(QGraphicsView):
                 - delta.y()
             )
 
+            self._minimap.refresh()
             event.accept()
             return
 

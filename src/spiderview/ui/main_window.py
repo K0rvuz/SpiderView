@@ -1491,6 +1491,8 @@ class MainWindow(QMainWindow):
 
         chosen = menu.exec(global_pos)
         if chosen is highlight_action:
+            if self.canvas.virtual_view_active:
+                self.canvas.clear_virtual_view()
             result = self._build_path_investigation(node_id)
             if result is None:
                 self.statusBar().showMessage(
@@ -1509,11 +1511,7 @@ class MainWindow(QMainWindow):
             )
         elif chosen is isolate_action:
             if self.canvas.virtual_view_active:
-                self.statusBar().showMessage(
-                    "Restaure o Raw Graph antes de isolar um caminho.",
-                    5000,
-                )
-                return
+                self.canvas.clear_virtual_view()
             result = self._build_path_investigation(node_id)
             if result is None:
                 self.statusBar().showMessage(
@@ -1679,8 +1677,12 @@ class MainWindow(QMainWindow):
 
     def _restore_path_view(self) -> None:
         self.canvas.clear_path_view()
+        if self._analysis_view_required():
+            self._refresh_analysis_view(fit=True, preserve_positions=True)
+        else:
+            QTimer.singleShot(0, self.canvas.fit_graph)
         self.statusBar().showMessage(
-            "Visualização completa restaurada.",
+            "Visualização anterior restaurada.",
             3500,
         )
 

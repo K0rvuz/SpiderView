@@ -134,7 +134,8 @@ class NoteCard(PageCard):
             self.CONNECTOR_RADIUS - 4.0,
         )
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#F6F2E8"))
+        # Keep the connector dot in the note's chosen color too.
+        painter.setBrush(accent)
         painter.drawEllipse(
             connector,
             inner,

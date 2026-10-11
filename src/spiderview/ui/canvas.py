@@ -18,9 +18,12 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
+    QFrame,
     QGraphicsPathItem,
     QGraphicsScene,
     QGraphicsView,
+    QHBoxLayout,
+    QToolButton,
 )
 
 from ..graph.view_graph import ViewGraph
@@ -35,6 +38,7 @@ from .group_card import GroupCard
 from .metadata_marker import MetadataMarker
 from .note_card import NoteCard
 from .page_card import PageCard
+from .minimap import MiniMapView
 
 
 class SpiderCanvas(QGraphicsView):
@@ -51,6 +55,7 @@ class SpiderCanvas(QGraphicsView):
 
     nodeDoubleClicked = Signal(str)
     groupDoubleClicked = Signal(str)
+    nodeContextMenuRequested = Signal(str, QPoint)
 
     # Note -> raw card. A MainWindow cria a Transition persistente.
     manualConnectionRequested = Signal(str, str)
@@ -177,6 +182,50 @@ class SpiderCanvas(QGraphicsView):
         self._manual_connection_source_id: str | None = None
         self._manual_connection_preview: QGraphicsPathItem | None = None
         self._manual_connection_source_point: QPointF | None = None
+
+        # Temporary path investigation state. The raw graph remains
+        # authoritative; temporary positions are never persisted.
+        self._path_view_state: dict | None = None
+        self._path_highlight_node_ids: set[str] = set()
+        self._path_highlight_edge_ids: set[str] = set()
+
+        # Compact UX controls over the canvas.
+        self._zoom_controls = QFrame(self)
+        self._zoom_controls.setObjectName("SpiderCanvasZoomControls")
+        self._zoom_controls.setStyleSheet(
+            "#SpiderCanvasZoomControls { background: rgba(25, 30, 39, 235); "
+            "border: 1px solid #3A4658; border-radius: 8px; }"
+            "QToolButton { color: #E8EDF5; background: transparent; "
+            "border: 0; min-width: 30px; min-height: 28px; "
+            "font-size: 17px; font-weight: 600; }"
+            "QToolButton:hover { background: #35445A; border-radius: 5px; }"
+        )
+        zoom_layout = QHBoxLayout(self._zoom_controls)
+        zoom_layout.setContentsMargins(4, 3, 4, 3)
+        zoom_layout.setSpacing(1)
+
+        self._zoom_out_button = QToolButton(self._zoom_controls)
+        self._zoom_out_button.setText("−")
+        self._zoom_out_button.setToolTip("Diminuir zoom")
+        self._zoom_out_button.clicked.connect(self.zoom_out)
+        zoom_layout.addWidget(self._zoom_out_button)
+
+        self._zoom_in_button = QToolButton(self._zoom_controls)
+        self._zoom_in_button.setText("+")
+        self._zoom_in_button.setToolTip("Aumentar zoom")
+        self._zoom_in_button.clicked.connect(self.zoom_in)
+        zoom_layout.addWidget(self._zoom_in_button)
+
+        self._fit_button = QToolButton(self._zoom_controls)
+        self._fit_button.setText("⌗")
+        self._fit_button.setToolTip("Enquadrar grafo")
+        self._fit_button.clicked.connect(self.fit_graph)
+        zoom_layout.addWidget(self._fit_button)
+
+        self._minimap = MiniMapView(self._scene, self)
+        self._minimap.setToolTip("Mapa geral — clique para navegar")
+        self._zoom_controls.raise_()
+        self._minimap.raise_()
 
     # ------------------------------------------------------------------
     # Raw Nodes
@@ -709,11 +758,115 @@ class SpiderCanvas(QGraphicsView):
         )
 
     # ------------------------------------------------------------------
+    # Path investigation
+    # ------------------------------------------------------------------
+
+    @property
+    def path_view_active(self) -> bool:
+        return self._path_view_state is not None
+
+    def apply_path_highlight(
+        self,
+        node_ids: set[str],
+        edge_ids: set[str],
+    ) -> None:
+        self.clear_path_view()
+        self._path_highlight_node_ids = set(node_ids)
+        self._path_highlight_edge_ids = set(edge_ids)
+        for node_id, card in self.nodes.items():
+            card.set_path_highlight(node_id in self._path_highlight_node_ids)
+        for edge_id, edge in self.edges.items():
+            edge.set_path_highlight(edge_id in self._path_highlight_edge_ids)
+        self.viewport().update()
+
+    def apply_isolated_path(
+        self,
+        positions: dict[str, tuple[float, float]],
+        visible_node_ids: set[str],
+        visible_edge_ids: set[str],
+        highlight_node_ids: set[str],
+        highlight_edge_ids: set[str],
+    ) -> None:
+        if self._active_view_graph is not None:
+            raise RuntimeError(
+                "Restaure o Raw Graph antes de isolar um caminho."
+            )
+        self.clear_path_view()
+        self._path_view_state = {
+            "positions": {
+                node_id: (float(card.pos().x()), float(card.pos().y()))
+                for node_id, card in self.nodes.items()
+            },
+            "node_visible": {
+                node_id: card.isVisible()
+                for node_id, card in self.nodes.items()
+            },
+            "edge_visible": {
+                edge_id: edge.isVisible()
+                for edge_id, edge in self.edges.items()
+            },
+        }
+        self._path_highlight_node_ids = set(highlight_node_ids)
+        self._path_highlight_edge_ids = set(highlight_edge_ids)
+
+        for node_id, card in self.nodes.items():
+            card.set_position_persistence_enabled(False)
+            card.setVisible(node_id in visible_node_ids)
+            if node_id in positions:
+                x, y = positions[node_id]
+                card.set_visual_position(x, y)
+            card.set_path_highlight(node_id in self._path_highlight_node_ids)
+
+        for edge_id, edge in self.edges.items():
+            edge.setVisible(edge_id in visible_edge_ids)
+            edge.set_path_highlight(edge_id in self._path_highlight_edge_ids)
+            edge.update_path()
+
+        self.grow_scene_to_graph()
+        self._update_edge_label_lod()
+        self.viewport().update()
+        self._minimap.refresh()
+        self.fit_graph()
+
+    def clear_path_view(self) -> None:
+        # Remove glow even when only "Destacar caminho" was active.
+        for card in self.nodes.values():
+            card.set_path_highlight(False)
+        for edge in self.edges.values():
+            edge.set_path_highlight(False)
+        self._path_highlight_node_ids.clear()
+        self._path_highlight_edge_ids.clear()
+
+        state = self._path_view_state
+        self._path_view_state = None
+        if state is None:
+            self.viewport().update()
+            return
+
+        for node_id, card in self.nodes.items():
+            card.set_position_persistence_enabled(False)
+            if node_id in state["positions"]:
+                x, y = state["positions"][node_id]
+                card.set_visual_position(x, y)
+            card.setVisible(state["node_visible"].get(node_id, True))
+            card.set_position_persistence_enabled(True)
+
+        for edge_id, edge in self.edges.items():
+            edge.setVisible(state["edge_visible"].get(edge_id, True))
+            edge.update_path()
+
+        self.grow_scene_to_graph()
+        self._update_edge_label_lod()
+        self.viewport().update()
+        self._minimap.refresh()
+
+    # ------------------------------------------------------------------
     # Canvas
     # ------------------------------------------------------------------
 
     def clear_graph(self) -> None:
         self._cancel_manual_connection()
+        self.clear_path_view()
         self.clear_virtual_view()
 
         self._scene.clear()
@@ -813,6 +966,7 @@ class SpiderCanvas(QGraphicsView):
         )
 
         self._update_edge_label_lod()
+        self._minimap.refresh()
 
     def _visible_graph_rect(
         self,
@@ -1004,6 +1158,49 @@ class SpiderCanvas(QGraphicsView):
     # ------------------------------------------------------------------
     # Zoom
     # ------------------------------------------------------------------
+
+    def zoom_in(self) -> None:
+        self._zoom_by_factor(self.ZOOM_FACTOR)
+
+    def zoom_out(self) -> None:
+        self._zoom_by_factor(1.0 / self.ZOOM_FACTOR)
+
+    def _zoom_by_factor(self, factor: float) -> None:
+        current = abs(self.transform().m11()) or 1.0
+        target = min(self.MAX_ZOOM, max(self.MIN_ZOOM, current * factor))
+        factor = target / current
+        self.scale(factor, factor)
+        self._update_edge_label_lod()
+        self._minimap.refresh()
+
+    def contextMenuEvent(self, event) -> None:
+        item = self.itemAt(event.pos())
+        while item is not None and not isinstance(item, PageCard):
+            item = item.parentItem()
+        if isinstance(item, PageCard):
+            self.nodeContextMenuRequested.emit(
+                item.node.id,
+                event.globalPos(),
+            )
+            event.accept()
+            return
+        super().contextMenuEvent(event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        margin = 14
+        self._zoom_controls.adjustSize()
+        self._zoom_controls.move(
+            margin,
+            max(margin, self.height() - self._zoom_controls.height() - margin),
+        )
+        self._minimap.move(
+            max(margin, self.width() - self._minimap.width() - margin),
+            max(margin, self.height() - self._minimap.height() - margin),
+        )
+        self._zoom_controls.raise_()
+        self._minimap.raise_()
+        self._minimap.refresh()
 
     def wheelEvent(
         self,

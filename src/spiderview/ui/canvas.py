@@ -220,7 +220,6 @@ class SpiderCanvas(QGraphicsView):
         zoom_layout.addWidget(self._fit_button)
 
         self._minimap = MiniMapView(self._scene, self, self.viewport())
-        self._scene.changed.connect(lambda _region: self._minimap.refresh())
         self.horizontalScrollBar().valueChanged.connect(self._minimap.refresh)
         self.verticalScrollBar().valueChanged.connect(self._minimap.refresh)
         self._zoom_controls.raise_()
@@ -969,6 +968,7 @@ class SpiderCanvas(QGraphicsView):
         )
 
         self._update_edge_label_lod()
+        self._minimap.refresh()
 
     def _visible_graph_rect(
         self,

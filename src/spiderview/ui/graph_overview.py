@@ -59,31 +59,30 @@ class GraphOverviewWidget(QWidget):
         return items, edges, centers, bounds.adjusted(-padding, -padding, padding, padding)
 
     def _metrics(self, items, edges):
+        page_kinds = {NodeKind.PAGE, NodeKind.DOM_STATE}
         pages = sum(
             1 for card in items.values()
-            if getattr(getattr(card, "node", None), "kind", None) == NodeKind.PAGE
+            if getattr(getattr(card, "node", None), "kind", None) in page_kinds
         )
         apis = sum(
             1 for card in items.values()
             if getattr(getattr(card, "node", None), "kind", None) == NodeKind.API
         )
-        path_pages = 0
-        path_apis = 0
         path_edge_ids = set(self._canvas._path_highlight_edge_ids)
         path_node_ids = set(self._canvas._path_highlight_node_ids)
+        path_pages = sum(
+            1 for node_id in path_node_ids
+            if node_id in items
+            and getattr(getattr(items[node_id], "node", None), "kind", None) in page_kinds
+        )
+        path_api_ids = {
+            node_id for node_id in path_node_ids
+            if node_id in items
+            and getattr(getattr(items[node_id], "node", None), "kind", None) == NodeKind.API
+        }
 
-        for node_id in path_node_ids:
-            card = items.get(node_id)
-            if card is None:
-                continue
-            kind = getattr(getattr(card, "node", None), "kind", None)
-            if kind == NodeKind.PAGE:
-                path_pages += 1
-            elif kind == NodeKind.API:
-                path_apis += 1
-
-        # Count direct API calls made by highlighted pages, even when API
-        # nodes are not explicitly included in the selected page path.
+        # Include unique APIs called directly by highlighted pages, as well
+        # as the page→API edges in the path connection count.
         for edge_id, source_id, target_id in edges:
             source = items.get(source_id)
             target = items.get(target_id)
@@ -91,11 +90,12 @@ class GraphOverviewWidget(QWidget):
             target_kind = getattr(getattr(target, "node", None), "kind", None)
             if (
                 source_id in path_node_ids
-                and source_kind == NodeKind.PAGE
+                and source_kind in page_kinds
                 and target_kind == NodeKind.API
             ):
-                path_apis += 1 if target_id not in path_node_ids else 0
+                path_api_ids.add(target_id)
                 path_edge_ids.add(edge_id)
+        path_apis = len(path_api_ids)
 
         return {
             "pages": pages,

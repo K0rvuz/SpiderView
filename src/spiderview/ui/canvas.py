@@ -1342,23 +1342,26 @@ class SpiderCanvas(QGraphicsView):
         preview = QGraphicsPathItem()
         preview.setZValue(6)
 
-        note_color = QColor(
-            str(
-                (note.node.metadata or {}).get(
-                    "color",
-                    "#D9A441",
+        # During a drag, preview the source card's visual color.
+        # Notes have a user-selected accent; regular page/API cards use
+        # the same neutral gray as their persisted connections.
+        if isinstance(note, NoteCard):
+            preview_color = QColor(
+                str(
+                    (note.node.metadata or {}).get(
+                        "color",
+                        "#D9A441",
+                    )
+                    or "#D9A441"
                 )
-                or "#D9A441"
             )
-        )
-
-        if not note_color.isValid():
-            note_color = QColor(
-                "#D9A441"
-            )
+            if not preview_color.isValid():
+                preview_color = QColor("#D9A441")
+        else:
+            preview_color = QColor("#667085")
 
         pen = QPen(
-            note_color,
+            preview_color,
             2.2,
         )
         pen.setStyle(

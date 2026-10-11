@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QMenu,
     QToolBar,
+    QTabWidget,
 )
 
 from ..browser.browser_host import BrowserHost
@@ -81,7 +82,7 @@ class MainWindow(QMainWindow):
         ):
             self.setTabPosition(
                 dock_area,
-                QMainWindow.DockWidgetTabPosition.North,
+                QTabWidget.TabPosition.North,
             )
 
         # --------------------------------------------------------------

@@ -193,6 +193,11 @@ class PageCard(QGraphicsObject):
             self.BORDER_RADIUS,
         )
 
+        painter.fillPath(
+            card_path,
+            QColor("#1F232A"),
+        )
+
         # Red aura used by "Destacar caminho". Multiple translucent
         # strokes create a glow without changing the card geometry.
         if self._path_highlight:
@@ -202,11 +207,6 @@ class PageCard(QGraphicsObject):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.setPen(QPen(glow, width))
                 painter.drawPath(card_path)
-
-        painter.fillPath(
-            card_path,
-            QColor("#1F232A"),
-        )
 
         if self.isSelected():
             border_color = QColor(

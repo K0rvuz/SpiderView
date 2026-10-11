@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QMenu,
     QToolBar,
 )
 
@@ -540,6 +542,11 @@ class MainWindow(QMainWindow):
         view_menu.addAction(
             fit_action
         )
+
+        restore_path_action = QAction("Restaurar grafo completo", self)
+        restore_path_action.setShortcut(QKeySequence("Esc"))
+        restore_path_action.triggered.connect(self._restore_path_view)
+        view_menu.addAction(restore_path_action)
 
         # --------------------------------------------------------------
         # Layout
@@ -1479,6 +1486,10 @@ class MainWindow(QMainWindow):
             self._open_node
         )
 
+        self.canvas.nodeContextMenuRequested.connect(
+            self._show_node_context_menu
+        )
+
         self.canvas.groupDoubleClicked.connect(
             self._toggle_view_group
         )
@@ -1510,6 +1521,193 @@ class MainWindow(QMainWindow):
         self.browser_host.apiRequestDetected.connect(
             self._on_api_request
         )
+
+    # ------------------------------------------------------------------
+    # Path investigation
+    # ------------------------------------------------------------------
+
+    def _show_node_context_menu(self, node_id: str, global_pos) -> None:
+        menu = QMenu(self)
+        path_menu = menu.addMenu("Investigar caminho")
+        highlight_action = path_menu.addAction("Destacar caminho")
+        isolate_action = path_menu.addAction("Isolar caminho")
+        restore_action = None
+        if self.canvas.path_view_active:
+            menu.addSeparator()
+            restore_action = menu.addAction("Restaurar grafo completo")
+        chosen = menu.exec(global_pos)
+
+        if chosen is highlight_action:
+            result = self._build_path_investigation(node_id)
+            if result is None:
+                self.statusBar().showMessage(
+                    "Não foi encontrado um caminho de páginas até esse elemento.", 5000
+                )
+                return
+            # Do not clear virtual/Tree/Graph layouts. Highlight is styling only.
+            path_ids, path_edge_ids, _api_edges_by_page = result
+            self.canvas.apply_path_highlight(set(path_ids), set(path_edge_ids))
+            self.statusBar().showMessage(
+                f"Caminho destacado · {len(path_ids)} página(s) · glow vermelho", 4500
+            )
+
+        elif chosen is isolate_action:
+            result = self._build_path_investigation(node_id)
+            if result is None:
+                self.statusBar().showMessage(
+                    "Não foi encontrado um caminho de páginas até esse elemento.", 5000
+                )
+                return
+            if self.canvas.virtual_view_active:
+                self.canvas.clear_virtual_view()
+            path_ids, path_edge_ids, api_edges_by_page = result
+            positions: dict[str, tuple[float, float]] = {}
+            visible_node_ids = set(path_ids)
+            visible_edge_ids = set(path_edge_ids)
+            page_y_gap = PageCard.HEIGHT + 115.0
+            side_gap = PageCard.WIDTH + 135.0
+            for index, page_id in enumerate(path_ids):
+                page_y = index * page_y_gap
+                positions[page_id] = (0.0, page_y)
+                api_ids = api_edges_by_page.get(page_id, [])
+                api_count = len(api_ids)
+                for api_index, api_id in enumerate(api_ids):
+                    if api_id in positions:
+                        visible_node_ids.add(api_id)
+                        continue
+                    side = -1.0 if (index + api_index) % 2 == 0 else 1.0
+                    offset = (api_index - (api_count - 1) / 2.0) * (
+                        PageCard.HEIGHT + 25.0
+                    )
+                    positions[api_id] = (side * side_gap, page_y + offset)
+                    visible_node_ids.add(api_id)
+            for page_id, api_ids in api_edges_by_page.items():
+                for api_id in api_ids:
+                    for edge_id, edge in self.canvas.edges.items():
+                        if (
+                            edge.transition.source_id == page_id
+                            and edge.transition.target_id == api_id
+                        ):
+                            visible_edge_ids.add(edge_id)
+            self.canvas.apply_isolated_path(
+                positions=positions,
+                visible_node_ids=visible_node_ids,
+                visible_edge_ids=visible_edge_ids,
+                highlight_node_ids=set(path_ids),
+                highlight_edge_ids=set(path_edge_ids),
+            )
+            self.statusBar().showMessage(
+                f"Caminho isolado · {len(path_ids)} página(s) · "
+                f"{len(visible_node_ids) - len(path_ids)} API(s) no contexto lateral",
+                5500,
+            )
+        elif restore_action is not None and chosen is restore_action:
+            self._restore_path_view()
+
+    def _build_path_investigation(self, target_id: str):
+        """Find a directed page path and list APIs called directly by each page."""
+        if target_id not in self.canvas.nodes:
+            return None
+        nodes = {node_id: card.node for node_id, card in self.canvas.nodes.items()}
+        target = nodes[target_id]
+        page_kinds = {NodeKind.PAGE, NodeKind.DOM_STATE}
+        page_ids = {
+            node_id for node_id, node in nodes.items()
+            if node.kind in page_kinds
+        }
+        if target.kind == NodeKind.API:
+            incoming_pages = [
+                edge.transition.source_id
+                for edge in self.canvas.edges.values()
+                if edge.transition.target_id == target_id
+                and edge.transition.source_id in page_ids
+            ]
+            if incoming_pages:
+                target_id = incoming_pages[0]
+            else:
+                return None
+        elif target_id not in page_ids:
+            return None
+
+        outgoing: dict[str, list[tuple[str, str]]] = {page_id: [] for page_id in page_ids}
+        indegree = {page_id: 0 for page_id in page_ids}
+        for edge_id, edge in self.canvas.edges.items():
+            transition = edge.transition
+            source_id, dest_id = transition.source_id, transition.target_id
+            if source_id not in page_ids or dest_id not in page_ids:
+                continue
+            if transition.type in {
+                TransitionType.FETCH, TransitionType.XHR,
+                TransitionType.REQUEST, TransitionType.DOM_MUTATION,
+            }:
+                continue
+            outgoing[source_id].append((dest_id, edge_id))
+            indegree[dest_id] += 1
+
+        def find_path(start_id: str, goal_id: str):
+            queue = deque([start_id])
+            previous: dict[str, tuple[str, str] | None] = {start_id: None}
+            while queue:
+                current = queue.popleft()
+                if current == goal_id:
+                    break
+                for next_id, edge_id in outgoing.get(current, []):
+                    if next_id not in previous:
+                        previous[next_id] = (current, edge_id)
+                        queue.append(next_id)
+            if goal_id not in previous:
+                return None
+            path, edges = [goal_id], []
+            cursor = goal_id
+            while previous[cursor] is not None:
+                parent_id, edge_id = previous[cursor]
+                edges.append(edge_id)
+                path.append(parent_id)
+                cursor = parent_id
+            return list(reversed(path)), list(reversed(edges))
+
+        roots = [node_id for node_id in page_ids if indegree[node_id] == 0]
+        roots.sort(key=lambda node_id: (
+            0 if (
+                "home" in nodes[node_id].title.lower()
+                or urlsplit(nodes[node_id].url).path.rstrip("/") == ""
+            ) else 1,
+            nodes[node_id].title.lower(),
+        ))
+        if not roots:
+            roots = sorted(page_ids, key=lambda node_id: nodes[node_id].title.lower())
+        path_result = None
+        for root_id in roots:
+            path_result = find_path(root_id, target_id)
+            if path_result is not None:
+                break
+        if path_result is None:
+            return None
+        path_ids, path_edge_ids = path_result
+
+        api_edges_by_page: dict[str, list[str]] = {}
+        for page_id in path_ids:
+            seen_apis = set()
+            api_edges_by_page[page_id] = []
+            for edge in self.canvas.edges.values():
+                transition = edge.transition
+                if (
+                    transition.source_id == page_id
+                    and transition.target_id in nodes
+                    and nodes[transition.target_id].kind == NodeKind.API
+                    and transition.target_id not in seen_apis
+                ):
+                    api_edges_by_page[page_id].append(transition.target_id)
+                    seen_apis.add(transition.target_id)
+        return path_ids, path_edge_ids, api_edges_by_page
+
+    def _restore_path_view(self) -> None:
+        self.canvas.clear_path_view()
+        if self._analysis_view_required():
+            self._refresh_analysis_view(fit=True, preserve_positions=True)
+        else:
+            QTimer.singleShot(0, self.canvas.fit_graph)
+        self.statusBar().showMessage("Visualização anterior restaurada.", 3500)
 
     # ------------------------------------------------------------------
     # Status bar

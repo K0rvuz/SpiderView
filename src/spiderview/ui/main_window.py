@@ -1649,14 +1649,14 @@ class MainWindow(QMainWindow):
         if not roots:
             roots = sorted(page_ids, key=lambda page_id: nodes[page_id].title.lower())
 
-        candidates = []
+        path_result = None
         for root_id in roots:
-            found = find_path(root_id, target_id)
-            if found is not None:
-                candidates.append(found)
-        if not candidates:
+            path_result = find_path(root_id, target_id)
+            if path_result is not None:
+                break
+        if path_result is None:
             return None
-        path_ids, path_edge_ids = min(candidates, key=lambda result: len(result[0]))
+        path_ids, path_edge_ids = path_result
 
         api_edges_by_page: dict[str, list[str]] = {}
         for page_id in path_ids:

@@ -18,7 +18,7 @@ def _install_crash_logging() -> None:
     global _CRASH_LOG
     log_path = Path.cwd() / "spiderview-crash.log"
     _CRASH_LOG = log_path.open("a", encoding="utf-8", buffering=1)
-    _CRASH_LOG.write("\\n\\n=== SpiderView session start ===\\n")
+    _CRASH_LOG.write("\n\n=== SpiderView session start ===\n")
     faulthandler.enable(file=_CRASH_LOG, all_threads=True)
 
     def exception_hook(exc_type, exc_value, exc_traceback):
@@ -30,10 +30,10 @@ def _install_crash_logging() -> None:
 
     def qt_message_handler(message_type, context, message):
         label = getattr(message_type, "name", str(message_type))
-        _CRASH_LOG.write(f"[Qt {label}] {message}\\n")
+        _CRASH_LOG.write(f"[Qt {label}] {message}\n")
         _CRASH_LOG.flush()
         if message_type in (QtMsgType.QtFatalMsg,):
-            sys.stderr.write(f"[Qt {label}] {message}\\n")
+            sys.stderr.write(f"[Qt {label}] {message}\n")
 
     qInstallMessageHandler(qt_message_handler)
 

@@ -237,6 +237,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         node: PageNode,
     ) -> PageCard:
+        if self.path_view_active:
+            self.clear_path_view()
         if node.id in self.nodes:
             return self.nodes[
                 node.id
@@ -306,6 +308,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         node_id: str,
     ) -> None:
+        if self.path_view_active:
+            self.clear_path_view()
         # Uma view virtual fica inválida assim que
         # o raw graph sofre mutação estrutural.
         if self._active_view_graph is not None:
@@ -349,6 +353,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         transition: Transition,
     ) -> EdgeItem:
+        if self.path_view_active:
+            self.clear_path_view()
         if transition.id in self.edges:
             return self.edges[
                 transition.id
@@ -401,6 +407,8 @@ class SpiderCanvas(QGraphicsView):
         self,
         edge_id: str,
     ) -> None:
+        if self.path_view_active:
+            self.clear_path_view()
         if self._active_view_graph is not None:
             self.clear_virtual_view()
 
@@ -580,6 +588,7 @@ class SpiderCanvas(QGraphicsView):
         Nenhum PageNode ou Transition real é removido.
         """
 
+        self.clear_path_view()
         self.clear_virtual_view()
 
         self._active_view_graph = (
@@ -1044,6 +1053,7 @@ class SpiderCanvas(QGraphicsView):
         self._ensure_scene_contains(
             card.sceneBoundingRect()
         )
+        self._minimap.refresh()
 
     # ------------------------------------------------------------------
     # Infinite-ish scene

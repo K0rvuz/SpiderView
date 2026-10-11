@@ -807,6 +807,7 @@ class SpiderCanvas(QGraphicsView):
         for edge_id, edge in self.edges.items():
             edge.set_path_highlight(edge_id in self._path_highlight_edge_ids)
         self.viewport().update()
+        self.overviewChanged.emit()
 
     def apply_isolated_path(
         self,
@@ -857,6 +858,7 @@ class SpiderCanvas(QGraphicsView):
         self._path_view_state = None
         if state is None:
             self.viewport().update()
+            self.overviewChanged.emit()
             return
         for node_id, card in self.nodes.items():
             card.set_position_persistence_enabled(False)

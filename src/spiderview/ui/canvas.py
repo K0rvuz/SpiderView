@@ -1308,6 +1308,7 @@ class SpiderCanvas(QGraphicsView):
         )
 
         self._update_edge_label_lod()
+        self._minimap.refresh()
 
     # ------------------------------------------------------------------
     # Manual connections

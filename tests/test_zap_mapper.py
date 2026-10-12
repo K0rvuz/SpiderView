@@ -108,6 +108,24 @@ class ZapMapperTests(unittest.TestCase):
         self.assertEqual(nodes[0].status, 200)
         self.assertEqual(transitions, [])
 
+    def test_maps_redirect_only_when_destination_was_observed(self) -> None:
+        messages = [
+            message(
+                1,
+                "https://example.test/old",
+                status=302,
+                response_headers="Location: /landing\\r\\nContent-Type: text/html",
+            ),
+            message(2, "https://example.test/landing"),
+        ]
+
+        nodes, transitions = self.mapper.map_messages(messages)
+
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(len(transitions), 1)
+        self.assertEqual(transitions[0].type, TransitionType.REDIRECT)
+        self.assertEqual(transitions[0].label, "302")
+
     def test_does_not_store_request_or_response_bodies(self) -> None:
         nodes, _ = self.mapper.map_messages([message(1, "https://example.test/")])
 

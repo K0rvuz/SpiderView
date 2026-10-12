@@ -1557,7 +1557,9 @@ class MainWindow(QMainWindow):
             self.browser_dock.hide
         )
 
-        self.canvas.overviewChanged.connect(self.graph_overview.update)
+        self.canvas.overviewChanged.connect(
+            lambda: self.graph_overview.update()
+        )
 
         self.browser_host.navigationFinished.connect(
             self._on_browser_navigation_finished

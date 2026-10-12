@@ -32,6 +32,8 @@ from ..graph import (
 )
 from ..models import NodeKind, PageNode, Transition, TransitionType
 from ..persistence.project_store import ProjectStore, ProjectStoreError
+from ..zap.client import ZapClient, ZapClientError
+from ..zap.mapper import ZapMapper
 from ..security_observations import (
     build_security_observations,
     normalize_headers,
@@ -648,6 +650,19 @@ class MainWindow(QMainWindow):
         )
         tools_menu.addAction(
             demo_action
+        )
+
+        tools_menu.addSeparator()
+
+        zap_import_action = QAction(
+            "Importar tráfego do OWASP ZAP…",
+            self,
+        )
+        zap_import_action.triggered.connect(
+            self._import_zap_traffic
+        )
+        tools_menu.addAction(
+            zap_import_action
         )
 
     def _create_analysis_toolbar(
@@ -1542,7 +1557,9 @@ class MainWindow(QMainWindow):
             self.browser_dock.hide
         )
 
-        self.canvas.overviewChanged.connect(self.graph_overview.update)
+        self.canvas.overviewChanged.connect(
+            lambda: self.graph_overview.update()
+        )
 
         self.browser_host.navigationFinished.connect(
             self._on_browser_navigation_finished
@@ -4688,6 +4705,141 @@ class MainWindow(QMainWindow):
             "node_details",
         ):
             self.node_details.clear()
+
+    # ------------------------------------------------------------------
+    # OWASP ZAP import
+    # ------------------------------------------------------------------
+
+    def _import_zap_traffic(self) -> None:
+        """Importa o histórico capturado pelo ZAP para o grafo atual."""
+        try:
+            client = ZapClient()
+            status = client.get_status()
+            if status["total_messages"] <= 0:
+                QMessageBox.information(
+                    self,
+                    "OWASP ZAP",
+                    "O ZAP está conectado, mas ainda não há mensagens HTTP capturadas. "
+                    "Navegue por um site no navegador do ZAP e tente novamente.",
+                )
+                return
+
+            messages = client.get_all_messages(
+                page_size=200,
+                max_pages=50,
+            )
+            if not messages:
+                QMessageBox.information(
+                    self,
+                    "OWASP ZAP",
+                    "O ZAP informa mensagens capturadas, mas não retornou registros para importar.",
+                )
+                return
+
+            current_nodes = [
+                card.node
+                for card in self.canvas.nodes.values()
+            ]
+            current_transitions = [
+                edge.transition
+                for edge in self.canvas.edges.values()
+            ]
+            mapped_nodes, mapped_transitions = ZapMapper().map_messages(
+                messages,
+                existing_nodes=current_nodes,
+                existing_transitions=current_transitions,
+            )
+
+        except (ZapClientError, ValueError) as exc:
+            QMessageBox.warning(
+                self,
+                "Falha ao importar tráfego do ZAP",
+                str(exc),
+            )
+            return
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Falha ao importar tráfego do ZAP",
+                f"Não foi possível importar o histórico HTTP: {exc}",
+            )
+            return
+
+        existing_ids = set(self.canvas.nodes)
+        existing_edge_ids = set(self.canvas.edges)
+        new_nodes = [
+            node for node in mapped_nodes
+            if node.id not in existing_ids
+        ]
+
+        # Refresh metadata on existing cards without replacing their Qt
+        # items, IDs, user titles, previews, or canvas positions.
+        mapped_by_id = {node.id: node for node in mapped_nodes}
+        for node_id in existing_ids:
+            card = self.canvas.get_node(node_id)
+            mapped = mapped_by_id.get(node_id)
+            if card is None or mapped is None:
+                continue
+            card.node.status = mapped.status
+            card.node.metadata = dict(mapped.metadata)
+            card.update()
+
+        # Place imported nodes near their observed parent when possible.
+        # A small grid offset prevents several new nodes from overlapping
+        # before the user chooses a graph layout.
+        incoming_sources: dict[str, str] = {}
+        for edge in mapped_transitions:
+            if edge.target_id not in incoming_sources:
+                incoming_sources[edge.target_id] = edge.source_id
+
+        placement_counts: dict[str, int] = {}
+        for node in new_nodes:
+            source_id = incoming_sources.get(node.id)
+            if source_id not in self.canvas.nodes:
+                source_id = self._current_node_id
+            base_x, base_y = self._suggest_position(source_id)
+            offset = placement_counts.get(source_id or "", 0)
+            placement_counts[source_id or ""] = offset + 1
+            node.x = base_x + (offset % 3) * 110
+            node.y = base_y + (offset // 3) * 135
+
+            self.canvas.add_node(node)
+            if node.kind == NodeKind.API:
+                self._register_api_node(node)
+            else:
+                self._register_url(node.id, node.url)
+
+        imported_edges = 0
+        for edge in mapped_transitions:
+            if edge.id in existing_edge_ids:
+                continue
+            if (
+                edge.source_id not in self.canvas.nodes
+                or edge.target_id not in self.canvas.nodes
+            ):
+                continue
+            self.canvas.add_edge(edge)
+            imported_edges += 1
+
+        imported_nodes = len(new_nodes)
+        if not imported_nodes and not imported_edges:
+            self.statusBar().showMessage(
+                f"ZAP consultado: {len(messages)} mensagens; nenhum node ou conexão novo.",
+                6000,
+            )
+            return
+
+        if self._analysis_view_required():
+            self._refresh_analysis_view(fit=True)
+        else:
+            self.canvas.grow_scene_to_graph()
+            QTimer.singleShot(0, self.canvas.fit_graph)
+
+        self.statusBar().showMessage(
+            f"Importação ZAP concluída · {imported_nodes} node(s) novo(s) · "
+            f"{imported_edges} conexão(ões) nova(s) · {len(messages)} mensagens analisadas",
+            7000,
+        )
 
     # ------------------------------------------------------------------
     # Demo

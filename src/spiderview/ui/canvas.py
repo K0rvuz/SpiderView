@@ -219,8 +219,12 @@ class SpiderCanvas(QGraphicsView):
         self._fit_button.clicked.connect(self.fit_graph)
         zoom_layout.addWidget(self._fit_button)
 
-        self.horizontalScrollBar().valueChanged.connect(self.overviewChanged.emit)
-        self.verticalScrollBar().valueChanged.connect(self.overviewChanged.emit)
+        self.horizontalScrollBar().valueChanged.connect(
+            lambda _value: self.overviewChanged.emit()
+        )
+        self.verticalScrollBar().valueChanged.connect(
+            lambda _value: self.overviewChanged.emit()
+        )
         self._zoom_controls.raise_()
 
     # ------------------------------------------------------------------

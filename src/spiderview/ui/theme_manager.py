@@ -56,3 +56,5 @@ QToolTip {{ background:{c['surface']}; color:{c['text']}; border:1px solid {c['b
         if window is not None:
             if hasattr(window,"canvas"): window.canvas.setBackgroundBrush(QColor(c["canvas"]))
             if hasattr(window,"graph_overview"): window.graph_overview.update()
+            if hasattr(window,"canvas"):
+                for item in list(window.canvas.nodes.values()) + list(window.canvas.view_groups.values()): item.update()

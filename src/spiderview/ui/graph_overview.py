@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .theme_manager import theme_colors
+
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QColor, QBrush, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
@@ -110,15 +112,15 @@ class GraphOverviewWidget(QWidget):
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.fillRect(self.rect(), QColor("#0B1423"))
+        painter.fillRect(self.rect(), QColor(theme_colors()["panel"]))
 
         items, edges, centers, bounds = self._layout_snapshot()
         metrics = self._metrics(items, edges)
 
-        painter.setPen(QPen(QColor("#1B2A40"), 1))
+        painter.setPen(QPen(QColor(theme_colors()["border"]), 1))
         painter.drawRoundedRect(self.rect().adjusted(1, 1, -2, -2), 10, 10)
 
-        painter.setPen(QColor("#E2E8F0"))
+        painter.setPen(QColor(theme_colors()["text"]))
         title_font = QFont()
         title_font.setPointSize(10)
         title_font.setWeight(QFont.Weight.DemiBold)
@@ -128,7 +130,7 @@ class GraphOverviewWidget(QWidget):
         sub_font = QFont()
         sub_font.setPointSize(8)
         painter.setFont(sub_font)
-        painter.setPen(QColor("#94A3B8"))
+        painter.setPen(QColor(theme_colors()["muted"]))
         painter.drawText(14, 42, "Mapa abstrato · navegação por clique")
 
         graph_rect = QRectF(12, 52, max(1, self.width() - 24), max(70, self.height() - 142))
@@ -162,7 +164,7 @@ class GraphOverviewWidget(QWidget):
                 )
                 note_color = QColor(
                     str((getattr(note_node, "metadata", None) or {}).get("color", "#D9A441"))
-                ) if note_node is not None else QColor("#30435D")
+                ) if note_node is not None else QColor(theme_colors()["card_border"])
                 if not note_color.isValid():
                     note_color = QColor("#D9A441")
                 color = QColor("#FB4766") if highlighted else (
@@ -187,9 +189,9 @@ class GraphOverviewWidget(QWidget):
                 elif kind == NodeKind.API:
                     color, radius = QColor("#6377FF"), 3.1
                 elif kind == NodeKind.PAGE:
-                    color, radius = QColor("#52739A"), 3.5
+                    color, radius = QColor(theme_colors()["accent"]), 3.5
                 else:
-                    color, radius = QColor("#64748B"), 3.0
+                    color, radius = QColor(theme_colors()["muted"]), 3.0
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QBrush(color))
                 painter.drawEllipse(point, radius, radius)
@@ -212,7 +214,7 @@ class GraphOverviewWidget(QWidget):
             painter.drawRect(viewport_box.intersected(graph_rect))
 
         divider_y = max(110, self.height() - 82)
-        painter.setPen(QPen(QColor("#1E3048"), 1))
+        painter.setPen(QPen(QColor(theme_colors()["border"]), 1))
         painter.drawLine(12, divider_y, self.width() - 12, divider_y)
 
         metrics_font = QFont()
@@ -226,7 +228,7 @@ class GraphOverviewWidget(QWidget):
         col_width = max(1, (self.width() - 28) // 3)
         for index, (label, value, color) in enumerate(columns):
             x = 14 + index * col_width
-            painter.setPen(QColor("#8FA0B8"))
+            painter.setPen(QColor(theme_colors()["muted"]))
             painter.drawText(x, divider_y + 18, label)
             value_font = QFont()
             value_font.setPointSize(13)

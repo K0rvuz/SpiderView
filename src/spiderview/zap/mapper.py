@@ -54,6 +54,8 @@ def _clean_url(value: str, base_url: str | None = None) -> str | None:
 
     # Fragments are client-side state, not part of an HTTP request target.
     path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/") or "/"
     hostname = hostname.lower()
     netloc = hostname
     if port is not None and not (

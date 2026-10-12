@@ -10,7 +10,8 @@ description = "Visual application mapping interface powered by ZAP"
 requires-python = ">=3.10"
 
 dependencies = [
-    "PySide6"
+    "PySide6",
+    "python-owasp-zap-v2.4",
 ]
 
 

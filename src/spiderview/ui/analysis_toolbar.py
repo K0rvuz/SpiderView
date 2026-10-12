@@ -56,6 +56,8 @@ class AnalysisToolbar(QToolBar):
             parent,
         )
 
+        self.setObjectName("AnalysisToolbar")
+
         self.setMovable(
             False
         )

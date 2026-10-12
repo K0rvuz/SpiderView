@@ -246,8 +246,13 @@ class ZapMapper:
             if item["timestamp"] is not None:
                 metadata["zap_timestamp"] = item["timestamp"]
 
+            title = _title_for_url(url)
+            if node_kind == NodeKind.API:
+                path = urlsplit(url).path or "/"
+                title = f"{item['method']} {path}"
+
             node = PageNode(
-                title=_title_for_url(url),
+                title=title,
                 url=url,
                 kind=node_kind,
                 method=item["method"],

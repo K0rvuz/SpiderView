@@ -88,7 +88,11 @@ class ZapClient:
             raise ValueError("'count' deve ser maior que zero.")
 
         try:
-            return list(self._zap.core.messages(start, count) or [])
+            # A assinatura do cliente é messages(baseurl=None, start=None, count=None).
+            # Usar argumentos nomeados evita tratar start como baseurl.
+            return list(
+                self._zap.core.messages(start=start, count=count) or []
+            )
         except Exception as exc:
             raise ZapClientError(
                 "Não foi possível recuperar as mensagens HTTP do ZAP."
@@ -118,7 +122,6 @@ class ZapClient:
         """Retorna um resumo do estado do motor."""
         version = self.get_version()
         try:
-            # No cliente python-owasp-zap-v2.4, number_of_messages é método.
             total_messages = int(self._zap.core.number_of_messages())
             sites = self.get_sites()
         except Exception as exc:

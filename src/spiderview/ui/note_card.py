@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .theme_manager import theme_colors
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 
@@ -39,7 +41,7 @@ class NoteCard(PageCard):
 
         # Use the selected note color as a visible, muted card surface while
         # preserving enough darkness for readable title/body text.
-        base = QColor("#24231F")
+        base = QColor(theme_colors()["card"])
         tint_strength = 0.24
         tinted_background = QColor(
             round(base.red() * (1 - tint_strength) + accent.red() * tint_strength),
@@ -48,7 +50,7 @@ class NoteCard(PageCard):
         )
         painter.fillPath(card, tinted_background)
 
-        border = QColor("#60A5FA") if self.isSelected() else accent
+        border = QColor(theme_colors()["accent"]) if self.isSelected() else accent
         painter.setPen(QPen(border, 2.5 if self.isSelected() else 1.6))
         painter.drawPath(card)
 
@@ -65,7 +67,7 @@ class NoteCard(PageCard):
         title_font.setPointSize(11)
         title_font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(title_font)
-        painter.setPen(QColor("#F6F2E8"))
+        painter.setPen(QColor(theme_colors()["text"]))
         title_metrics = QFontMetrics(title_font)
         title = title_metrics.elidedText(
             self.node.title or "Nota",
@@ -81,7 +83,7 @@ class NoteCard(PageCard):
         body_font = QFont()
         body_font.setPointSize(9)
         painter.setFont(body_font)
-        painter.setPen(QColor("#D6D0C2"))
+        painter.setPen(QColor(theme_colors()["text"]))
         metrics = QFontMetrics(body_font)
         body = str(metadata.get("note_text", "") or "").strip()
         if not body:
@@ -105,7 +107,7 @@ class NoteCard(PageCard):
             tag_font = QFont()
             tag_font.setPointSize(8)
             painter.setFont(tag_font)
-            painter.setPen(QColor("#AFA58F"))
+            painter.setPen(QColor(theme_colors()["muted"]))
             tag_metrics = QFontMetrics(tag_font)
             tag_text = tag_metrics.elidedText(
                 tag_text,
@@ -123,7 +125,7 @@ class NoteCard(PageCard):
         connector = self.connector_local_pos()
         painter.setPen(
             QPen(
-                QColor("#171A1F"),
+                QColor(theme_colors()["border"]),
                 2.0,
             )
         )

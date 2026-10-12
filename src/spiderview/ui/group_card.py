@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .theme_manager import theme_colors
+
 from PySide6.QtCore import (
     QPointF,
     QRectF,
@@ -123,17 +125,17 @@ class GroupCard(QGraphicsObject):
 
         painter.fillPath(
             card,
-            QColor("#20262E"),
+            QColor(theme_colors()["card"]),
         )
 
         if self.isSelected():
             border = QColor(
-                "#60A5FA"
+                theme_colors()["accent"]
             )
             border_width = 2.5
         else:
             border = QColor(
-                "#46515E"
+                theme_colors()["card_border"]
             )
             border_width = 1.4
 
@@ -165,7 +167,7 @@ class GroupCard(QGraphicsObject):
 
         painter.fillPath(
             header,
-            QColor("#2A323D"),
+            QColor(theme_colors()["surface_alt"]),
         )
 
         painter.fillRect(
@@ -191,7 +193,7 @@ class GroupCard(QGraphicsObject):
             title_font
         )
         painter.setPen(
-            QColor("#F3F4F6")
+            QColor(theme_colors()["text"])
         )
 
         painter.drawText(
@@ -270,7 +272,7 @@ class GroupCard(QGraphicsObject):
             body_font
         )
         painter.setPen(
-            QColor("#B7C0CC")
+            QColor(theme_colors()["muted"])
         )
 
         if (
@@ -314,7 +316,7 @@ class GroupCard(QGraphicsObject):
         # Footer
         painter.setPen(
             QPen(
-                QColor("#38424E"),
+                QColor(theme_colors()["border"]),
                 1,
             )
         )
@@ -331,7 +333,7 @@ class GroupCard(QGraphicsObject):
         )
 
         painter.setPen(
-            QColor("#93A0B0")
+            QColor(theme_colors()["muted"])
         )
 
         expanded = bool(

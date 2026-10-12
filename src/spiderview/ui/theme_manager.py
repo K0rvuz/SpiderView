@@ -56,7 +56,15 @@ QToolButton:checked {{ background:{c['selection']}; border-color:transparent; co
 #AnalysisToolbar QComboBox,#AnalysisToolbar QSpinBox {{ background:transparent; color:{c['text']}; border:1px solid transparent; border-radius:4px; padding:5px 7px; }}
 #AnalysisToolbar QComboBox:hover,#AnalysisToolbar QSpinBox:hover {{ background:{c['selection']}; border-color:transparent; }}
 #AnalysisToolbar QComboBox:focus,#AnalysisToolbar QSpinBox:focus {{ border-color:{c['accent']}; }}
-#AnalysisToolbar QComboBox::drop-down,#AnalysisToolbar QSpinBox::up-button,#AnalysisToolbar QSpinBox::down-button {{ border:0; background:transparent; }}
+#AnalysisToolbar QComboBox::drop-down {{ border:0; background:transparent; }}
+#AnalysisToolbar QSpinBox::up-button,#AnalysisToolbar QSpinBox::down-button {{ subcontrol-origin:border; width:14px; border:0; background:transparent; }}
+#AnalysisToolbar QSpinBox::up-button {{ subcontrol-position:top right; }}
+#AnalysisToolbar QSpinBox::down-button {{ subcontrol-position:bottom right; }}
+#AnalysisToolbar QSpinBox::up-button:hover,#AnalysisToolbar QSpinBox::down-button:hover {{ background:{c['selection']}; }}
+#AnalysisToolbar QSpinBox::up-arrow {{ image:none; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:5px solid {c['muted']}; }}
+#AnalysisToolbar QSpinBox::down-arrow {{ image:none; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid {c['muted']}; }}
+#AnalysisToolbar QSpinBox::up-arrow:hover {{ border-bottom-color:{c['text']}; }}
+#AnalysisToolbar QSpinBox::down-arrow:hover {{ border-top-color:{c['text']}; }}
 #AnalysisToolbar QComboBox QAbstractItemView {{ background:{c['surface']}; color:{c['text']}; selection-background-color:{c['selection']}; border:1px solid {c['border']}; }}
 QStatusBar {{ background:{c['panel']}; color:{c['text']}; border-top:1px solid {c['border']}; }}
 QToolTip {{ background:{c['surface']}; color:{c['text']}; border:1px solid {c['border']}; }}

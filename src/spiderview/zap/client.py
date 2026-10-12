@@ -118,7 +118,8 @@ class ZapClient:
         """Retorna um resumo do estado do motor."""
         version = self.get_version()
         try:
-            total_messages = int(self._zap.core.number_of_messages)
+            # No cliente python-owasp-zap-v2.4, number_of_messages é método.
+            total_messages = int(self._zap.core.number_of_messages())
             sites = self.get_sites()
         except Exception as exc:
             raise ZapClientError(

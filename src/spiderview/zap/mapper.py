@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import replace
 from typing import Any, Iterable
-from urllib.parse import urldefrag, urljoin, urlsplit, urlunsplit
+from urllib.parse import urldefrag, urljoin, urlsplit
 
 from ..models import NodeKind, PageNode, Transition, TransitionType
 
@@ -71,9 +72,12 @@ def _request_details(message: dict[str, Any]) -> dict[str, Any] | None:
         target = match.group(2)
         host = request_headers.get("host")
         if host and target.startswith("/"):
-            # Absolute-form is common in proxy captures; origin-form is
-            # accepted as well when a Host header is present.
-            scheme = "https" if request_headers.get("x-forwarded-proto") == "https" else "http"
+            # Origin-form requests are accepted when Host is available.
+            scheme = (
+                "https"
+                if request_headers.get("x-forwarded-proto") == "https"
+                else "http"
+            )
             url = _clean_url(f"{scheme}://{host}{target}")
 
     if url is None:
@@ -92,19 +96,23 @@ def _request_details(message: dict[str, Any]) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         status = int(status_match.group(1)) if status_match else None
 
-    content_type = response_headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    content_type = (
+        response_headers.get("content-type", "")
+        .split(";", 1)[0]
+        .strip()
+        .lower()
+    )
     accept = request_headers.get("accept", "").lower()
     destination = request_headers.get("sec-fetch-dest", "").lower()
     is_document = (
         "text/html" in content_type
         or destination == "document"
-        or ("text/html" in accept and destination not in {"script", "style", "image", "font"})
+        or (
+            "text/html" in accept
+            and destination not in {"script", "style", "image", "font"}
+        )
     )
-
-    if is_document:
-        kind = NodeKind.PAGE
-    else:
-        kind = NodeKind.API
+    kind = NodeKind.PAGE if is_document else NodeKind.API
 
     if request_headers.get("x-requested-with", "").lower() == "xmlhttprequest":
         transition_type = TransitionType.XHR
@@ -115,7 +123,11 @@ def _request_details(message: dict[str, Any]) -> dict[str, Any] | None:
     else:
         transition_type = TransitionType.REQUEST
 
-    location = _clean_url(response_headers.get("location"), url) if status and 300 <= status < 400 else None
+    location = (
+        _clean_url(response_headers.get("location"), url)
+        if status and 300 <= status < 400
+        else None
+    )
     return {
         "url": url,
         "method": method,
@@ -158,8 +170,13 @@ class ZapMapper:
         URL e método. Uma transição só é criada quando há evidência explícita
         de Referer ou de redirecionamento para uma URL também observada.
         """
-        nodes = list(existing_nodes)
-        transitions = list(existing_transitions)
+        # Copy model objects so applying a ZAP snapshot cannot mutate the
+        # currently displayed/persisted graph before the caller accepts it.
+        nodes = [replace(node, metadata=dict(node.metadata)) for node in existing_nodes]
+        transitions = [
+            replace(edge, metadata=dict(edge.metadata))
+            for edge in existing_transitions
+        ]
         observations = [
             details
             for message in messages
@@ -167,8 +184,6 @@ class ZapMapper:
             and (details := _request_details(message)) is not None
         ]
 
-        # Determine a kind consistently even if the same URL appears in
-        # more than one message or messages arrive in a different order.
         kinds_by_url: dict[str, set[NodeKind]] = defaultdict(set)
         for item in observations:
             kinds_by_url[item["url"]].add(item["kind"])
@@ -187,11 +202,17 @@ class ZapMapper:
         for item in observations:
             url = item["url"]
             is_page = NodeKind.PAGE in kinds_by_url[url]
-            existing = url_to_node.get(url) if is_page else api_to_node.get((url, item["method"]))
+            existing = (
+                url_to_node.get(url)
+                if is_page
+                else api_to_node.get((url, item["method"]))
+            )
             if existing is not None:
-                # Refresh observed HTTP metadata without changing identity,
-                # canvas position, preview, or user-authored title.
-                existing.status = item["status"] if item["status"] is not None else existing.status
+                existing.status = (
+                    item["status"]
+                    if item["status"] is not None
+                    else existing.status
+                )
                 metadata = dict(existing.metadata)
                 if item["content_type"]:
                     metadata["content_type"] = item["content_type"]
@@ -228,8 +249,8 @@ class ZapMapper:
                 api_to_node[(url, item["method"])] = node
 
         transition_keys = {
-            (t.source_id, t.target_id, t.type, t.label)
-            for t in transitions
+            (edge.source_id, edge.target_id, edge.type, edge.label)
+            for edge in transitions
         }
         node_by_url = {
             normalized: node
@@ -252,6 +273,7 @@ class ZapMapper:
             target = target_node(item)
             if target is None:
                 continue
+
             source = node_by_url.get(item["referer"]) if item["referer"] else None
             if source is not None and source.id != target.id:
                 transition_type = item["transition_type"]
@@ -274,9 +296,12 @@ class ZapMapper:
                     )
                     transition_keys.add(key)
 
-            # Redirects are represented only when the destination was also
-            # observed, avoiding synthetic/unverified graph nodes.
-            destination = node_by_url.get(item["location"]) if item["location"] else None
+            # Redirect edges are created only if the destination was observed.
+            destination = (
+                node_by_url.get(item["location"])
+                if item["location"]
+                else None
+            )
             if destination is not None and destination.id != target.id:
                 label = str(item["status"] or "redirect")
                 key = (target.id, destination.id, TransitionType.REDIRECT, label)

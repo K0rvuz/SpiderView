@@ -6,9 +6,10 @@ from tempfile import TemporaryDirectory
 from time import monotonic
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QSettings, QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QFileDialog,
     QMainWindow,
@@ -41,6 +42,9 @@ from ..security_observations import (
     redact_headers,
 )
 from .analysis_toolbar import AnalysisToolbar
+from .icons import icon as svg_icon
+from .settings_dialog import SettingsDialog
+from .theme_manager import ThemeManager
 from .browser_console import BrowserConsolePanel
 from .canvas import SpiderCanvas
 from .edge_item import EdgeItem
@@ -304,6 +308,7 @@ class MainWindow(QMainWindow):
         # UI
         # --------------------------------------------------------------
 
+        self.theme_manager = ThemeManager()
         self._create_toolbar()
         self._create_analysis_toolbar()
         self._connect_signals()
@@ -349,6 +354,7 @@ class MainWindow(QMainWindow):
         tools_menu = menu_bar.addMenu(
             "Ferramentas"
         )
+        settings_menu = menu_bar.addMenu("Configurações")
 
         # --------------------------------------------------------------
         # Arquivo
@@ -661,9 +667,48 @@ class MainWindow(QMainWindow):
         zap_import_action.triggered.connect(
             self._import_zap_traffic
         )
-        tools_menu.addAction(
-            zap_import_action
-        )
+        self._zap_import_action = zap_import_action
+        tools_menu.addAction(zap_import_action)
+
+        settings_action = QAction("Preferências…", self)
+        settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        settings_action.triggered.connect(self._open_settings)
+        settings_menu.addAction(settings_action)
+
+        self._menu_icon_names = {
+            "Arquivo": "file", "Editar": "edit", "Visualização": "eye",
+            "Layout": "layout", "Ferramentas": "tools", "Configurações": "settings",
+            "Abrir projeto": "open", "Salvar": "save", "Salvar como…": "save",
+            "Exportar visualização atual como HTML…": "export", "Novo card": "plus",
+            "Nova nota": "note", "Nota da seleção": "note", "Tags / Status": "edit",
+            "Excluir seleção": "trash", "Limpar grafo": "reset", "Browser": "browser",
+            "Console / API Lab": "console", "Details": "eye", "Investigation": "scan",
+            "Fit Graph": "scan", "Restaurar grafo completo": "reset",
+            "Organizar grafo": "layout", "Organizar árvore": "tree",
+            "Orientação vertical": "vertical", "Carregar demo": "file",
+            "Importar tráfego do OWASP ZAP…": "shield", "Preferências…": "settings",
+        }
+        self._refresh_menu_icons()
+
+    def _refresh_menu_icons(self) -> None:
+        color = self.theme_manager.colors["icon"]
+        for menu in self.menuBar().findChildren(QMenu):
+            label = menu.title().replace("&", "")
+            if label in self._menu_icon_names:
+                menu.menuAction().setIcon(svg_icon(self._menu_icon_names[label], color))
+            for action in menu.actions():
+                key = self._menu_icon_names.get(action.text())
+                if key:
+                    action.setIcon(svg_icon(key, color))
+
+    def _open_settings(self) -> None:
+        dialog = SettingsDialog(self.theme_manager, self)
+        dialog.exec()
+        self.theme_manager.apply(QApplication.instance(), self)
+        self._refresh_menu_icons()
+        zap_enabled = QSettings("OZAP", "SpiderView").value("zap/enabled", True, type=bool)
+        self._zap_import_action.setEnabled(zap_enabled)
+        self._zap_import_action.setToolTip("" if zap_enabled else "Integração OWASP ZAP desativada nas configurações")
 
     def _create_analysis_toolbar(
         self,
@@ -4968,209 +5013,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _apply_theme(self) -> None:
-        self.setStyleSheet(
-            """
-            QMainWindow {
-                background: #14171C;
-            }
-
-            QMenuBar {
-                background: #171B21;
-                color: #D8DEE9;
-                border-bottom: 1px solid #2C323B;
-                padding: 3px 6px;
-            }
-
-            QMenuBar::item {
-                background: transparent;
-                border-radius: 5px;
-                padding: 6px 10px;
-            }
-
-            QMenuBar::item:selected {
-                background: #292F38;
-            }
-
-            QMenu {
-                background: #1B1F26;
-                color: #D8DEE9;
-                border: 1px solid #343B46;
-                padding: 5px;
-            }
-
-            QMenu::item {
-                border-radius: 5px;
-                padding: 7px 28px 7px 10px;
-            }
-
-            QMenu::item:selected {
-                background: #2B3440;
-            }
-
-            QMenu::separator {
-                height: 1px;
-                background: #343A45;
-                margin: 5px 8px;
-            }
-
-            QToolBar {
-                background: #1B1F26;
-                border: none;
-                border-bottom: 1px solid #2C323B;
-
-                spacing: 6px;
-
-                padding-left: 8px;
-                padding-right: 8px;
-                padding-top: 6px;
-                padding-bottom: 6px;
-            }
-
-            QToolBar::separator {
-                background: #343A45;
-
-                width: 1px;
-
-                margin-left: 8px;
-                margin-right: 8px;
-                margin-top: 5px;
-                margin-bottom: 5px;
-            }
-
-            QToolButton {
-                background: transparent;
-
-                color: #D8DEE9;
-
-                border: 1px solid transparent;
-                border-radius: 6px;
-
-                padding-left: 10px;
-                padding-right: 10px;
-                padding-top: 6px;
-                padding-bottom: 6px;
-
-                font-size: 12px;
-            }
-
-            QToolButton:hover {
-                background: #292F38;
-                border: 1px solid #3A424E;
-            }
-
-            QToolButton:pressed {
-                background: #343C48;
-            }
-
-            QStatusBar {
-                background: #1B1F26;
-
-                color: #8E99A8;
-
-                border-top: 1px solid #2C323B;
-
-                font-size: 11px;
-            }
-
-            QStatusBar::item {
-                border: none;
-            }
-
-            QDockWidget {
-                color: #D8DEE9;
-                font-weight: 600;
-            }
-
-            QDockWidget::title {
-                background: #1B1F26;
-
-                border-bottom: 1px solid #2C323B;
-
-                padding: 7px;
-            }
-
-            QLineEdit {
-                background: #111419;
-
-                color: #D8DEE9;
-
-                border: 1px solid #343B46;
-                border-radius: 6px;
-
-                padding: 6px;
-            }
-
-            QLineEdit:focus {
-                border: 1px solid #4C9AFF;
-            }
-
-            QPlainTextEdit,
-            QTableWidget,
-            QComboBox {
-                background: #111419;
-                color: #D8DEE9;
-                border: 1px solid #343B46;
-                border-radius: 5px;
-                selection-background-color: #315A86;
-            }
-
-            QHeaderView::section {
-                background: #1B1F26;
-                color: #BFC7D5;
-                border: none;
-                border-right: 1px solid #343B46;
-                border-bottom: 1px solid #343B46;
-                padding: 5px;
-            }
-
-            QTabWidget::pane {
-                border: 1px solid #2C323B;
-                background: #171B21;
-            }
-
-            QTabBar::tab {
-                background: #1B1F26;
-                color: #AEB7C5;
-                padding: 7px 12px;
-                border: 1px solid #2C323B;
-                border-bottom: none;
-            }
-
-            QTabBar::tab:selected {
-                background: #252C35;
-                color: #FFFFFF;
-            }
-
-            QPushButton {
-                background: #252C35;
-                color: #D8DEE9;
-                border: 1px solid #3A424E;
-                border-radius: 5px;
-                padding: 6px 12px;
-            }
-
-            QPushButton:hover {
-                background: #303946;
-            }
-
-            QLabel {
-                color: #BFC7D5;
-            }
-            """
-        )
-
-        self.statusBar().setSizeGripEnabled(
-            False
-        )
-
-    # ------------------------------------------------------------------
-    # Close
-    # ------------------------------------------------------------------
+        self.theme_manager.apply(QApplication.instance(), self)
+        self._refresh_menu_icons()
 
     def closeEvent(
         self,
         event,
     ) -> None:
+        settings = QSettings("OZAP", "SpiderView")
+        if not settings.value("zap/enabled", True, type=bool):
+            QMessageBox.information(self, "OWASP ZAP desativado", "Ative a integração nas Configurações para importar tráfego.")
+            return
         self._preview_dir.cleanup()
 
         super().closeEvent(

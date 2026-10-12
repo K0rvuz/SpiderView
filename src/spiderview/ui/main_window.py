@@ -689,6 +689,8 @@ class MainWindow(QMainWindow):
             "Importar tráfego do OWASP ZAP…": "shield", "Preferências…": "settings",
         }
         self._refresh_menu_icons()
+        zap_enabled = QSettings("OZAP", "SpiderView").value("zap/enabled", True, type=bool)
+        self._zap_import_action.setEnabled(zap_enabled)
 
     def _refresh_menu_icons(self) -> None:
         color = self.theme_manager.colors["icon"]

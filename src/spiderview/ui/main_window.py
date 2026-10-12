@@ -4757,6 +4757,10 @@ class MainWindow(QMainWindow):
 
     def _import_zap_traffic(self) -> None:
         """Importa o histórico capturado pelo ZAP para o grafo atual."""
+        settings = QSettings("OZAP", "SpiderView")
+        if not settings.value("zap/enabled", True, type=bool):
+            QMessageBox.information(self, "OWASP ZAP desativado", "Ative a integração nas Configurações para importar tráfego.")
+            return
         try:
             client = ZapClient()
             status = client.get_status()

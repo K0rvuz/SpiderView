@@ -8,6 +8,8 @@ THEMES = {
 "Light": dict(window="#F4F6FA",panel="#FFFFFF",surface="#FFFFFF",surface_alt="#E9EDF4",border="#CDD4DF",text="#202938",muted="#667085",accent="#315FEA",selection="#DCE6FF",canvas="#F4F6FA",card="#FFFFFF",card_border="#C5CEDB",note="#A66A00",icon="#445168",success="#16794B",warning="#966000",error="#C12D3A",critical="#8B35B5"),
 "Dark+": dict(window="#090B10",panel="#0C1018",surface="#101621",surface_alt="#171F2D",border="#65748B",text="#FFFFFF",muted="#C0CBDC",accent="#7EA7FF",selection="#203B63",canvas="#080B11",card="#101725",card_border="#7B8BA5",note="#FFD166",icon="#FFFFFF",success="#61F2AE",warning="#FFD166",error="#FF727C",critical="#E5A0FF"),
 "Light+": dict(window="#FFFFFF",panel="#FFFFFF",surface="#FFFFFF",surface_alt="#F0F3F8",border="#596579",text="#111827",muted="#374151",accent="#003CC7",selection="#D5E4FF",canvas="#FFFFFF",card="#FFFFFF",card_border="#596579",note="#7A4B00",icon="#172033",success="#006B3C",warning="#784900",error="#B00020",critical="#65008F")}
+_ACTIVE_COLORS=THEMES["Dark"]
+def theme_colors(): return _ACTIVE_COLORS
 THEME_DESCRIPTIONS={"Dark":"Tema escuro equilibrado.","Light":"Tema claro equilibrado.","Dark+":"Alto contraste escuro, inspirado no VS Code.","Light+":"Alto contraste claro, inspirado no VS Code."}
 class ThemeManager:
     SETTINGS_KEY="appearance/theme"; CUSTOM_KEY="appearance/custom_theme"
@@ -28,7 +30,9 @@ class ThemeManager:
         self.custom.update({k:v for k,v in colors.items() if k in self.custom and QColor(str(v)).isValid()})
         self.settings.setValue(self.CUSTOM_KEY,json.dumps(self.custom)); self.set_theme("Personalizado")
     def apply(self,app,window=None):
+        global _ACTIVE_COLORS
         c=self.colors
+        _ACTIVE_COLORS=c
         app.setStyleSheet(f"""
 QWidget {{ color:{c['text']}; }}
 QMainWindow,QDialog {{ background:{c['window']}; }}

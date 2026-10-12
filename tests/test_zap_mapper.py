@@ -114,7 +114,7 @@ class ZapMapperTests(unittest.TestCase):
                 1,
                 "https://example.test/old",
                 status=302,
-                response_headers="Location: /landing\\r\\nContent-Type: text/html",
+                response_headers="Location: /landing\r\nContent-Type: text/html",
             ),
             message(2, "https://example.test/landing"),
         ]

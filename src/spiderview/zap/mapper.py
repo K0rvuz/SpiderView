@@ -12,7 +12,7 @@ import re
 from collections import defaultdict
 from dataclasses import replace
 from typing import Any, Iterable
-from urllib.parse import urldefrag, urljoin, urlsplit
+from urllib.parse import urldefrag, urljoin, urlsplit, urlunsplit
 
 from ..models import NodeKind, PageNode, Transition, TransitionType
 
@@ -44,13 +44,26 @@ def _clean_url(value: str, base_url: str | None = None) -> str | None:
         value = urljoin(base_url, value)
     try:
         parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
     except ValueError:
         return None
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+    scheme = parsed.scheme.lower()
+    if scheme not in {"http", "https"} or not hostname:
         return None
+
     # Fragments are client-side state, not part of an HTTP request target.
-    value, _fragment = urldefrag(value)
-    return value
+    path = parsed.path or "/"
+    hostname = hostname.lower()
+    netloc = hostname
+    if port is not None and not (
+        (scheme == "http" and port == 80)
+        or (scheme == "https" and port == 443)
+    ):
+        netloc = f"{hostname}:{port}"
+    normalized = urlunsplit((scheme, netloc, path, parsed.query, ""))
+    normalized, _fragment = urldefrag(normalized)
+    return normalized
 
 
 def _request_details(message: dict[str, Any]) -> dict[str, Any] | None:
@@ -72,7 +85,6 @@ def _request_details(message: dict[str, Any]) -> dict[str, Any] | None:
         target = match.group(2)
         host = request_headers.get("host")
         if host and target.startswith("/"):
-            # Origin-form requests are accepted when Host is available.
             scheme = (
                 "https"
                 if request_headers.get("x-forwarded-proto") == "https"
@@ -170,8 +182,6 @@ class ZapMapper:
         URL e método. Uma transição só é criada quando há evidência explícita
         de Referer ou de redirecionamento para uma URL também observada.
         """
-        # Copy model objects so applying a ZAP snapshot cannot mutate the
-        # currently displayed/persisted graph before the caller accepts it.
         nodes = [replace(node, metadata=dict(node.metadata)) for node in existing_nodes]
         transitions = [
             replace(edge, metadata=dict(edge.metadata))

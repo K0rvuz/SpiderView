@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .theme_manager import theme_colors
+
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
@@ -195,17 +197,17 @@ class PageCard(QGraphicsObject):
 
         painter.fillPath(
             card_path,
-            QColor("#1F232A"),
+            QColor(theme_colors()["card"]),
         )
 
         if self.isSelected():
             border_color = QColor(
-                "#4C9AFF"
+                theme_colors()["accent"]
             )
             border_width = 2.5
         else:
             border_color = QColor(
-                "#3A4048"
+                theme_colors()["card_border"]
             )
             border_width = 1.2
 
@@ -237,7 +239,7 @@ class PageCard(QGraphicsObject):
 
         painter.fillPath(
             header_path,
-            QColor("#292E36"),
+            QColor(theme_colors()["surface_alt"]),
         )
 
         painter.fillRect(
@@ -264,7 +266,7 @@ class PageCard(QGraphicsObject):
             title_font
         )
         painter.setPen(
-            QColor("#F3F4F6")
+            QColor(theme_colors()["text"])
         )
 
         title_metrics = (
@@ -348,7 +350,7 @@ class PageCard(QGraphicsObject):
             url_font
         )
         painter.setPen(
-            QColor("#9CA3AF")
+            QColor(theme_colors()["muted"])
         )
 
         url_metrics = QFontMetrics(
@@ -395,7 +397,7 @@ class PageCard(QGraphicsObject):
 
         painter.fillPath(
             preview_path,
-            QColor("#15191E"),
+            QColor(theme_colors()["surface"]),
         )
 
         if not self._preview.isNull():
@@ -433,7 +435,7 @@ class PageCard(QGraphicsObject):
                 empty_font
             )
             painter.setPen(
-                QColor("#667085")
+                QColor(theme_colors()["muted"])
             )
 
             painter.drawText(
@@ -450,7 +452,7 @@ class PageCard(QGraphicsObject):
 
         painter.setPen(
             QPen(
-                QColor("#343A43"),
+                QColor(theme_colors()["border"]),
                 1,
             )
         )

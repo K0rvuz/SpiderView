@@ -14,7 +14,7 @@ class SettingsDialog(QDialog):
         content.addWidget(self.categories); content.addWidget(self.pages,1); outer.addLayout(content,1)
         self.pages.addWidget(self._appearance_page()); self.pages.addWidget(self._zap_page()); self.pages.addWidget(self._spider_page())
         self.categories.currentRowChanged.connect(self.pages.setCurrentIndex); self.categories.setCurrentRow(0)
-        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Close); buttons.rejected.connect(self.reject); buttons.accepted.connect(self.accept); outer.addWidget(buttons)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel); buttons.rejected.connect(self.reject); buttons.accepted.connect(self.accept); outer.addWidget(buttons)
     def _appearance_page(self):
         page=QWidget(); layout=QVBoxLayout(page); layout.addWidget(QLabel("<h2>Aparência</h2><p>Escolha um tema ou crie sua própria paleta.</p>"))
         self.theme_combo=QComboBox(); self.theme_combo.addItems(["Dark","Light","Dark+","Light+","Personalizado"]); self.theme_combo.setCurrentText(self.theme_manager.current_name); self.theme_combo.currentTextChanged.connect(self._select_theme)

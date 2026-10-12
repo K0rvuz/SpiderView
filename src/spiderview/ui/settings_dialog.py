@@ -38,6 +38,8 @@ class SettingsDialog(QDialog):
     def _update_description(self):
         name=self.theme_combo.currentText(); self.description.setText("Paleta editável pelo usuário." if name=="Personalizado" else THEME_DESCRIPTIONS[name])
     def _refresh_colors(self):
+        if not hasattr(self, "color_buttons"):
+            return
         for token,(button,preview) in self.color_buttons.items():
             color=self.theme_manager.custom[token]; button.setText(color); preview.setStyleSheet(f"background:{color};border:1px solid #777;"); button.setEnabled(self.theme_combo.currentText()=="Personalizado")
     def _choose_color(self,token):

@@ -48,8 +48,16 @@ QTabWidget::pane {{ border:1px solid {c['border']}; background:{c['surface']}; }
 QTabBar::tab {{ background:{c['surface_alt']}; color:{c['text']}; border:1px solid {c['border']}; padding:7px 12px; }}
 QTabBar::tab:selected {{ background:{c['selection']}; }}
 QLineEdit,QTextEdit,QPlainTextEdit,QComboBox,QSpinBox,QDoubleSpinBox,QListWidget,QTreeWidget,QTableWidget {{ background:{c['surface']}; color:{c['text']}; border:1px solid {c['border']}; selection-background-color:{c['selection']}; }}
-QPushButton,QToolButton {{ background:{c['surface_alt']}; color:{c['text']}; border:1px solid {c['border']}; border-radius:4px; padding:5px 9px; }}
-QPushButton:hover,QToolButton:hover {{ border-color:{c['accent']}; }}
+QPushButton {{ background:{c['surface_alt']}; color:{c['text']}; border:1px solid {c['border']}; border-radius:4px; padding:5px 9px; }}
+QPushButton:hover {{ border-color:{c['accent']}; }}
+QToolButton {{ background:transparent; color:{c['text']}; border:1px solid transparent; border-radius:4px; padding:5px 9px; }}
+QToolButton:hover {{ background:{c['selection']}; border-color:transparent; }}
+QToolButton:checked {{ background:{c['selection']}; border-color:transparent; color:{c['text']}; }}
+#AnalysisToolbar QComboBox,#AnalysisToolbar QSpinBox {{ background:transparent; color:{c['text']}; border:1px solid transparent; border-radius:4px; padding:5px 7px; }}
+#AnalysisToolbar QComboBox:hover,#AnalysisToolbar QSpinBox:hover {{ background:{c['selection']}; border-color:transparent; }}
+#AnalysisToolbar QComboBox:focus,#AnalysisToolbar QSpinBox:focus {{ border-color:{c['accent']}; }}
+#AnalysisToolbar QComboBox::drop-down,#AnalysisToolbar QSpinBox::up-button,#AnalysisToolbar QSpinBox::down-button {{ border:0; background:transparent; }}
+#AnalysisToolbar QComboBox QAbstractItemView {{ background:{c['surface']}; color:{c['text']}; selection-background-color:{c['selection']}; border:1px solid {c['border']}; }}
 QStatusBar {{ background:{c['panel']}; color:{c['text']}; border-top:1px solid {c['border']}; }}
 QToolTip {{ background:{c['surface']}; color:{c['text']}; border:1px solid {c['border']}; }}
 """)

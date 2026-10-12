@@ -1,4 +1,4 @@
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 PATHS={
@@ -24,10 +24,25 @@ PATHS={
 "reset":'<path d="M3 11a9 9 0 1 1 2 6M3 4v7h7"/>',
 "help":'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4.4 1.6c-1.1 1-1.9 1.2-1.9 3M12 17h.01"/>'
 }
-def icon(name,color="#C6D0E0",size=16):
-    body=PATHS.get(name,PATHS["help"])
-    svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">{body}</svg>'
-    renderer=QSvgRenderer(QByteArray(svg.encode()))
-    pixmap=QPixmap(size,size); pixmap.fill(Qt.GlobalColor.transparent)
-    painter=QPainter(pixmap); renderer.render(painter); painter.end()
-    return QIcon(pixmap)
+def icon(name, color="#C6D0E0", size=16):
+    """Renderiza o SVG em alta densidade para manter traços nítidos ao reduzir."""
+    body = PATHS.get(name, PATHS["help"])
+    scale = 4
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" '
+        f'viewBox="0 0 24 24" fill="none" stroke="{color}" '
+        f'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+        f'{body}</svg>'
+    )
+    renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
+    pixmap = QPixmap(size * scale, size * scale)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    renderer.render(painter, QRectF(0, 0, size * scale, size * scale))
+    painter.end()
+    pixmap.setDevicePixelRatio(scale)
+    result = QIcon()
+    result.addPixmap(pixmap)
+    return result
